@@ -1,0 +1,22 @@
+go 1.27.2
+
+use (
+	.
+	./cel
+	./expr
+	./gpython
+	./hostmodule
+	./javascript
+	./lua
+	./source/consul
+	./source/database
+	./source/etcd
+	./source/git
+	./source/http
+	./source/redis
+	./source/s3
+	./starlark
+	./tcl
+	./wazero
+	./yaegi
+)
