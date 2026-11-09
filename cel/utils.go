@@ -103,6 +103,7 @@ func createBinding(fi *funcInfo) func(args ...ref.Val) ref.Val {
 	}
 }
 
+// inferCelType 根据反射类型推导 CEL 变量或函数声明类型。
 func inferCelType(t reflect.Type) *cel.Type {
 	if t == nil {
 		return cel.DynType
@@ -126,7 +127,7 @@ func inferCelType(t reflect.Type) *cel.Type {
 		return cel.ListType(inferCelType(t.Elem()))
 	case reflect.Map:
 		return cel.MapType(inferCelType(t.Key()), inferCelType(t.Elem()))
-	case reflect.Ptr:
+	case reflect.Pointer:
 		return inferCelType(t.Elem())
 	default:
 
@@ -140,6 +141,7 @@ func inferCelType(t reflect.Type) *cel.Type {
 	}
 }
 
+// celValToGo 将 CEL 结果递归转换为 Go 标量、列表或映射。
 func celValToGo(v ref.Val) any {
 	if v == nil {
 		return nil
@@ -163,7 +165,7 @@ func celValToGo(v ref.Val) any {
 	case traits.Lister:
 		size := int64(val.Size().(types.Int))
 		result := make([]any, size)
-		for i := int64(0); i < size; i++ {
+		for i := range size {
 			result[i] = celValToGo(val.Get(types.Int(i)))
 		}
 		return result

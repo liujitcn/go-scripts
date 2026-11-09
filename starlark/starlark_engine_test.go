@@ -730,18 +730,17 @@ func TestStartStopWatch_WithMem(t *testing.T) {
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
+// TestConcurrentExecute 验证并发执行已加载脚本的结果。
 func TestConcurrentExecute(t *testing.T) {
 	eng := newTestEngine(t)
 	require.NoError(t, eng.LoadString(context.Background(), "expr", "x = 1 + 2\n"))
 
 	var wg sync.WaitGroup
-	for i := 0; i < 5; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range 5 {
+		wg.Go(func() {
 			_, err := eng.Execute(context.Background())
 			assert.NoError(t, err)
-		}()
+		})
 	}
 	wg.Wait()
 }

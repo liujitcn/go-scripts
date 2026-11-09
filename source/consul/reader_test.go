@@ -18,7 +18,7 @@ import (
 type fakeConsul struct {
 	mu      sync.Mutex
 	data    map[string]*api.KVPair
-	getHits int64
+	getHits atomic.Int64
 	idx     uint64
 }
 
@@ -59,10 +59,11 @@ func (f *fakeConsul) del(key string) {
 	delete(f.data, key)
 }
 
+// Get 模拟读取指定键值并记录调用次数。
 func (f *fakeConsul) Get(key string, _ *api.QueryOptions) (*api.KVPair, *api.QueryMeta, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	atomic.AddInt64(&f.getHits, 1)
+	f.getHits.Add(1)
 	pair, ok := f.data[key]
 	if !ok {
 		return nil, &api.QueryMeta{}, nil
@@ -109,6 +110,7 @@ func TestReader_ImplementsInterface(t *testing.T) {
 	var _ source.ReadWatcher = (*Reader)(nil)
 }
 
+// TestWithPrefix_Normalized 验证脚本源前缀按既定规则规范化。
 func TestWithPrefix_Normalized(t *testing.T) {
 	cases := []struct {
 		in   string
@@ -122,7 +124,6 @@ func TestWithPrefix_Normalized(t *testing.T) {
 		{"/scripts/", "scripts/"},
 	}
 	for _, tc := range cases {
-		tc := tc
 		t.Run(tc.in, func(t *testing.T) {
 			cfg := &configOptions{}
 			WithPrefix(tc.in)(cfg)
@@ -131,6 +132,7 @@ func TestWithPrefix_Normalized(t *testing.T) {
 	}
 }
 
+// TestLoad_HappyPath 验证脚本读取成功并记录预期的远端调用次数。
 func TestLoad_HappyPath(t *testing.T) {
 	f := newFakeConsul()
 	f.set("hello.lua", "print('hi')")
@@ -141,7 +143,7 @@ func TestLoad_HappyPath(t *testing.T) {
 	code, err := src.Load(context.Background(), "hello.lua")
 	require.NoError(t, err)
 	assert.Equal(t, "print('hi')", code)
-	assert.Equal(t, int64(1), atomic.LoadInt64(&f.getHits))
+	assert.Equal(t, int64(1), f.getHits.Load())
 }
 
 func TestLoad_NotFound_WrapsSentinel(t *testing.T) {
@@ -186,6 +188,7 @@ func TestClose_NoError(t *testing.T) {
 	assert.NoError(t, src.Close())
 }
 
+// TestLoad_Concurrent 验证脚本源在并发读取时返回一致结果。
 func TestLoad_Concurrent(t *testing.T) {
 	f := newFakeConsul()
 	f.set("shared.lua", "-- shared body\n")
@@ -196,7 +199,7 @@ func TestLoad_Concurrent(t *testing.T) {
 	const goroutines = 30
 	var wg sync.WaitGroup
 	wg.Add(goroutines)
-	for i := 0; i < goroutines; i++ {
+	for range goroutines {
 		go func() {
 			defer wg.Done()
 			code, err := src.Load(context.Background(), "shared.lua")
@@ -205,7 +208,7 @@ func TestLoad_Concurrent(t *testing.T) {
 		}()
 	}
 	wg.Wait()
-	assert.Equal(t, int64(goroutines), atomic.LoadInt64(&f.getHits))
+	assert.Equal(t, int64(goroutines), f.getHits.Load())
 }
 
 func TestWatch_KeyModified(t *testing.T) {

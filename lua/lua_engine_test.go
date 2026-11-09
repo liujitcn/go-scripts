@@ -19,6 +19,7 @@ import (
 	"github.com/liujitcn/go-scripts/source"
 )
 
+// TestLuaEngine 验证 Lua 引擎的变量注册、执行与结果读取。
 func TestLuaEngine(t *testing.T) {
 	eng, err := newLuaEngine()
 	assert.Nil(t, err)
@@ -30,7 +31,7 @@ func TestLuaEngine(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	err = eng.RegisterGlobal("config", map[string]interface{}{
+	err = eng.RegisterGlobal("config", map[string]any{
 		"host": "localhost",
 		"port": 8080,
 	})
@@ -52,6 +53,7 @@ func TestLuaEngine(t *testing.T) {
 	fmt.Println(result) // expected: 30
 }
 
+// TestConcurrentCallAndGet 验证并发调用 Lua 函数和读取全局变量。
 func TestConcurrentCallAndGet(t *testing.T) {
 	eng, err := newLuaEngine()
 	assert.Nil(t, err)
@@ -69,55 +71,55 @@ func TestConcurrentCallAndGet(t *testing.T) {
     `)
 	assert.Nil(t, err)
 
-	err = eng.RegisterGlobal("config", map[string]interface{}{
+	err = eng.RegisterGlobal("config", map[string]any{
 		"host": "localhost",
 		"port": 8080,
 	})
 	assert.Nil(t, err)
 
 	var wg sync.WaitGroup
-	var errCount int64
+	var errCount atomic.Int64
 
 	const goroutines = 50
 	const loops = 200
 
-	for i := 0; i < goroutines; i++ {
+	for i := range goroutines {
 		wg.Add(1)
 		go func(id int) {
 			defer wg.Done()
-			for j := 0; j < loops; j++ {
+			for range loops {
 				cctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 				val, callErr := eng.CallFunction(cctx, "add", 10, 20)
 				cancel()
 				if callErr != nil {
-					atomic.AddInt64(&errCount, 1)
+					errCount.Add(1)
 					continue
 				}
 
 				switch v := val.(type) {
 				case int:
 					if v != 30 {
-						atomic.AddInt64(&errCount, 1)
+						errCount.Add(1)
 					}
 				case int64:
 					if v != 30 {
-						atomic.AddInt64(&errCount, 1)
+						errCount.Add(1)
 					}
 				case float64:
 					if v != 30.0 {
-						atomic.AddInt64(&errCount, 1)
+						errCount.Add(1)
 					}
 				default:
-					atomic.AddInt64(&errCount, 1)
+					errCount.Add(1)
 				}
 
 				gv, gerr := eng.GetGlobal("config")
 				if gerr != nil {
-					atomic.AddInt64(&errCount, 1)
+					errCount.Add(1)
 				} else {
-					if _, ok := gv.(map[string]interface{}); !ok {
+					if _, ok := gv.(map[string]any); !ok {
 						if gv == nil {
-							atomic.AddInt64(&errCount, 1)
+							errCount.Add(1)
 						}
 					}
 				}
@@ -126,11 +128,12 @@ func TestConcurrentCallAndGet(t *testing.T) {
 	}
 
 	wg.Wait()
-	if atomic.LoadInt64(&errCount) != 0 {
-		t.Fatalf("concurrent operations produced %d errors, lastError=%v", atomic.LoadInt64(&errCount), eng.GetLastError())
+	if errCount.Load() != 0 {
+		t.Fatalf("concurrent operations produced %d errors, lastError=%v", errCount.Load(), eng.GetLastError())
 	}
 }
 
+// TestConcurrentInitClose 验证 Lua 引擎并发初始化和关闭的结果。
 func TestConcurrentInitClose(t *testing.T) {
 	const goroutines = 40
 	const ops = 200
@@ -141,24 +144,24 @@ func TestConcurrentInitClose(t *testing.T) {
 	defer eng.Close()
 
 	var wg sync.WaitGroup
-	var initErrCount int64
-	var closeErrCount int64
+	var initErrCount atomic.Int64
+	var closeErrCount atomic.Int64
 
-	for i := 0; i < goroutines; i++ {
+	for i := range goroutines {
 		wg.Add(1)
 		go func(id int) {
 			defer wg.Done()
-			for j := 0; j < ops; j++ {
+			for j := range ops {
 				if j%2 == 0 {
 					if err = eng.Init(context.Background()); err != nil {
 						if !errors.Is(err, ErrLuaEngineAlreadyInitialized) {
-							atomic.AddInt64(&initErrCount, 1)
+							initErrCount.Add(1)
 						}
 					}
 				} else {
 					if err = eng.Close(); err != nil {
 						if !errors.Is(err, ErrLuaEngineNotInitialized) {
-							atomic.AddInt64(&closeErrCount, 1)
+							closeErrCount.Add(1)
 						}
 					}
 				}
@@ -169,9 +172,9 @@ func TestConcurrentInitClose(t *testing.T) {
 
 	wg.Wait()
 
-	if atomic.LoadInt64(&initErrCount) != 0 || atomic.LoadInt64(&closeErrCount) != 0 {
+	if initErrCount.Load() != 0 || closeErrCount.Load() != 0 {
 		t.Fatalf("unexpected init/close errors: initErr=%d closeErr=%d lastError=%v",
-			atomic.LoadInt64(&initErrCount), atomic.LoadInt64(&closeErrCount), eng.GetLastError())
+			initErrCount.Load(), closeErrCount.Load(), eng.GetLastError())
 	}
 
 	if err = eng.Init(context.Background()); err != nil && !errors.Is(err, ErrLuaEngineAlreadyInitialized) {
@@ -568,6 +571,7 @@ func TestLuaEngine_RuntimeHook_PoolReuse_Isolation(t *testing.T) {
 	assert.Equal(t, int64(5), v)
 }
 
+// TestLuaEngine_RuntimeHook_ReverseRegister 验证反向注册顺序下运行时钩子仍执行一次。
 func TestLuaEngine_RuntimeHook_ReverseRegister(t *testing.T) {
 	ctx := context.Background()
 
@@ -603,12 +607,12 @@ func TestLuaEngine_RuntimeHook_ReverseRegister(t *testing.T) {
 	hooksMu.Unlock()
 	require.NotNil(t, fn, "Lua callback should have been registered into Go")
 
-	var ran int32
+	var ran atomic.Int32
 	done := make(chan any, 1)
 	go func() {
 		eng.mu.Lock()
 		defer eng.mu.Unlock()
-		atomic.StoreInt32(&ran, 1)
+		ran.Store(1)
 		if err := eng.vm.L.CallByParam(lua.P{
 			Fn:      fn,
 			NRet:    1,
@@ -626,7 +630,7 @@ func TestLuaEngine_RuntimeHook_ReverseRegister(t *testing.T) {
 	case res := <-done:
 		require.NoError(t, nil)
 		assert.Equal(t, "processed:data", res)
-		assert.Equal(t, int32(1), atomic.LoadInt32(&ran))
+		assert.Equal(t, int32(1), ran.Load())
 	case <-time.After(2 * time.Second):
 		t.Fatal("reverse dispatch timed out")
 	}

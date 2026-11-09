@@ -8,10 +8,15 @@ import (
 	"github.com/liujitcn/go-scripts/hostmodule"
 )
 
+// HookEngine 定义 Lua 宿主注册钩子、脚本和回调所需的能力。
 type HookEngine interface {
+	// RegisterHook 注册命名钩子及其说明。
 	RegisterHook(name, description string) error
-	AddScript(hookName string, script interface{}) error
+	// AddScript 向指定钩子添加脚本。
+	AddScript(hookName string, script any) error
+	// ListHooks 返回已注册的钩子名称。
 	ListHooks() []string
+	// RegisterCallback 注册钩子对应的 Lua 回调函数。
 	RegisterCallback(hookName string, L *lua.LState, fn *lua.LFunction)
 }
 

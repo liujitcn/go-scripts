@@ -1,13 +1,14 @@
 package expr
 
+import "maps"
+
 ////////////////////////////////////////////////////////////////////////////////
 // 内部辅助函数。
 ////////////////////////////////////////////////////////////////////////////////
 
+// snapshotEnv 浅拷贝脚本环境，保留独立的变量映射。
 func (e *engine) snapshotEnv() map[string]any {
 	env := make(map[string]any, len(e.env))
-	for k, v := range e.env {
-		env[k] = v
-	}
+	maps.Copy(env, e.env)
 	return env
 }

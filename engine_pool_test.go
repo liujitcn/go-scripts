@@ -185,6 +185,7 @@ func TestEnginePool_IsClosed(t *testing.T) {
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
+// TestEnginePool_InitAll 验证池中所有实例均重新初始化。
 func TestEnginePool_InitAll(t *testing.T) {
 	_, cleanup := withPoolFactory(t, nil, nil)
 	defer cleanup()
@@ -193,7 +194,7 @@ func TestEnginePool_InitAll(t *testing.T) {
 	require.NoError(t, err)
 	defer func() { _ = pool.Close() }()
 
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		eng, acqErr := pool.Acquire()
 		require.NoError(t, acqErr)
 		mock := eng.(*mockEngine)
@@ -334,6 +335,7 @@ func TestEnginePool_CallFunction(t *testing.T) {
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
+// TestEnginePool_ConcurrentAcquireRelease 验证固定容量引擎池并发借还实例的结果。
 func TestEnginePool_ConcurrentAcquireRelease(t *testing.T) {
 	_, cleanup := withPoolFactory(t, nil, nil)
 	defer cleanup()
@@ -346,15 +348,15 @@ func TestEnginePool_ConcurrentAcquireRelease(t *testing.T) {
 	const goroutines = 50
 	const loops = 100
 	var wg sync.WaitGroup
-	var errCount int64
+	var errCount atomic.Int64
 	wg.Add(goroutines)
-	for i := 0; i < goroutines; i++ {
+	for range goroutines {
 		go func() {
 			defer wg.Done()
-			for j := 0; j < loops; j++ {
+			for range loops {
 				eng, acqErr := pool.Acquire()
 				if acqErr != nil {
-					atomic.AddInt64(&errCount, 1)
+					errCount.Add(1)
 					continue
 				}
 				_ = eng.GetType()
@@ -363,5 +365,5 @@ func TestEnginePool_ConcurrentAcquireRelease(t *testing.T) {
 		}()
 	}
 	wg.Wait()
-	assert.Equal(t, int64(0), atomic.LoadInt64(&errCount))
+	assert.Equal(t, int64(0), errCount.Load())
 }

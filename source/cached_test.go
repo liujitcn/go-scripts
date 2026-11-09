@@ -213,6 +213,7 @@ func TestCached_Close_StopsWatchers(t *testing.T) {
 	c.mu.Unlock()
 }
 
+// TestCached_Concurrent 验证缓存脚本源的并发读取结果。
 func TestCached_Concurrent(t *testing.T) {
 	remote := &fakeSource{code: "shared"}
 	c, err := NewCachedSource(remote)
@@ -222,7 +223,7 @@ func TestCached_Concurrent(t *testing.T) {
 	const goroutines = 30
 	var wg sync.WaitGroup
 	wg.Add(goroutines)
-	for i := 0; i < goroutines; i++ {
+	for range goroutines {
 		go func() {
 			defer wg.Done()
 			code, err := c.Load(context.Background(), "k")

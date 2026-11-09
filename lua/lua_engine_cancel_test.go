@@ -34,8 +34,9 @@ func newStartedEngine(t *testing.T) *engine {
 	return e
 }
 
+// TestLuaAsyncCancel_ExecuteString 验证异步脚本超时后可复用引擎且关闭不阻塞。
 func TestLuaAsyncCancel_ExecuteString(t *testing.T) {
-	for i := 0; i < 2; i++ {
+	for i := range 2 {
 		e := newStartedEngine(t)
 
 		ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)

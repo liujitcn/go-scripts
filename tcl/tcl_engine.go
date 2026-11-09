@@ -353,6 +353,7 @@ func (e *engine) GetGlobal(name string) (any, error) {
 
 ////////////////////////////////////////////////////////////////////////////////
 
+// RegisterFunction 将 Go 宿主函数注册为 Tcl 可调用命令。
 func (e *engine) RegisterFunction(name string, fn any) error {
 	if !e.IsInitialized() {
 		e.setLastError(ErrTCLEngineNotInitialized)
@@ -379,7 +380,7 @@ func (e *engine) RegisterFunction(name string, fn any) error {
 
 	cmdName := sanitizeCmdName(name)
 	_, err := e.interp.NewCommand(cmdName,
-		func(clientData interface{}, in *tcl.Interp, args []string) int {
+		func(clientData any, in *tcl.Interp, args []string) int {
 
 			goArgs := make([]any, len(args)-1)
 			for i, s := range args[1:] {

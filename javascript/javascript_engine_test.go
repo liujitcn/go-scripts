@@ -16,6 +16,7 @@ import (
 	"github.com/liujitcn/go-scripts/source"
 )
 
+// TestJavascriptEngine 验证 JavaScript 引擎的变量注册、执行与结果读取。
 func TestJavascriptEngine(t *testing.T) {
 	eng, err := newJavascriptEngine()
 	assert.Nil(t, err)
@@ -27,7 +28,7 @@ func TestJavascriptEngine(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	err = eng.RegisterGlobal("config", map[string]interface{}{
+	err = eng.RegisterGlobal("config", map[string]any{
 		"host": "localhost",
 		"port": 8080,
 	})
@@ -61,6 +62,7 @@ func TestJavascriptEngine(t *testing.T) {
 	fmt.Println(result) // expected: 300
 }
 
+// TestConcurrentExecuteAndCallFunction 验证并发执行 JavaScript 和调用脚本函数。
 func TestConcurrentExecuteAndCallFunction(t *testing.T) {
 	eng, err := newJavascriptEngine()
 	if err != nil {
@@ -81,10 +83,10 @@ func TestConcurrentExecuteAndCallFunction(t *testing.T) {
 	var wg sync.WaitGroup
 	wg.Add(goroutines)
 
-	for i := 0; i < goroutines; i++ {
+	for i := range goroutines {
 		go func(i int) {
 			defer wg.Done()
-			for j := 0; j < 20; j++ {
+			for range 20 {
 				ctxExe, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
 				_, _ = eng.ExecuteString(ctxExe, "expr.js", "1 + 2 + 3")
 				cancel()
@@ -109,6 +111,7 @@ func TestConcurrentExecuteAndCallFunction(t *testing.T) {
 	}
 }
 
+// TestConcurrentInitCloseAndExecute 验证 JavaScript 引擎并发初始化、关闭和执行。
 func TestConcurrentInitCloseAndExecute(t *testing.T) {
 	eng, err := newJavascriptEngine()
 	if err != nil {
@@ -120,10 +123,8 @@ func TestConcurrentInitCloseAndExecute(t *testing.T) {
 
 	stopBg := make(chan struct{})
 	var bgWg sync.WaitGroup
-	bgWg.Add(1)
-	go func() {
-		defer bgWg.Done()
-		for i := 0; i < 50; i++ {
+	bgWg.Go(func() {
+		for i := range 50 {
 			_ = eng.Init(ctx)
 			_ = eng.RegisterGlobal("g", map[string]any{"i": i})
 			time.Sleep(5 * time.Millisecond)
@@ -131,15 +132,15 @@ func TestConcurrentInitCloseAndExecute(t *testing.T) {
 			time.Sleep(5 * time.Millisecond)
 		}
 		close(stopBg)
-	}()
+	})
 
 	const callers = 200
 	var wg sync.WaitGroup
 	wg.Add(callers)
-	for i := 0; i < callers; i++ {
+	for i := range callers {
 		go func(i int) {
 			defer wg.Done()
-			for j := 0; j < 30; j++ {
+			for range 30 {
 				c, cancel := context.WithTimeout(ctx, 200*time.Millisecond)
 				_, _ = eng.ExecuteString(c, "expr.js", "1+2+3+"+time.Now().Format("150405")) // short computation
 				cancel()

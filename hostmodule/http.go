@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"slices"
 	"strings"
 	"time"
 )
@@ -29,13 +30,14 @@ type HTTPOptions struct {
 
 const EnvHTTPAllowedDomains = "SCRIPT_HTTP_ALLOWED_DOMAINS"
 
+// HTTPAllowlistFromEnv 从环境变量读取 HTTP 域名白名单。
 func HTTPAllowlistFromEnv() HTTPOptions {
 	raw := strings.TrimSpace(os.Getenv(EnvHTTPAllowedDomains))
 	opts := HTTPOptions{}
 	if raw == "" {
 		return opts
 	}
-	for _, d := range strings.Split(raw, ",") {
+	for d := range strings.SplitSeq(raw, ",") {
 		if d = strings.TrimSpace(d); d != "" {
 			opts.AllowedDomains = append(opts.AllowedDomains, d)
 		}
@@ -61,6 +63,7 @@ func NormalizeHTTPOptions(o HTTPOptions) HTTPOptions {
 	return o
 }
 
+// CheckAllowedURL 校验请求协议、主机白名单及配置要求的本地地址限制。
 func CheckAllowedURL(rawURL string, allowed []string, denyLoopback bool) error {
 	u, err := url.Parse(rawURL)
 	if err != nil {
@@ -74,10 +77,8 @@ func CheckAllowedURL(rawURL string, allowed []string, denyLoopback bool) error {
 		return errors.New("url host is empty")
 	}
 	if denyLoopback {
-		for _, banned := range []string{"localhost", "127.0.0.1", "0.0.0.0", "::1", "169.254.169.254"} {
-			if host == banned {
-				return fmt.Errorf("host %q is not allowed", host)
-			}
+		if slices.Contains([]string{"localhost", "127.0.0.1", "0.0.0.0", "::1", "169.254.169.254"}, host) {
+			return fmt.Errorf("host %q is not allowed", host)
 		}
 	}
 

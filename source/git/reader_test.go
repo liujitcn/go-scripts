@@ -22,10 +22,10 @@ type fakeGit struct {
 	mu         sync.Mutex
 	files      map[string][]byte // key -> content
 	headHash   string
-	pullHash   string // hash after "pull"
-	pullCount  int64  // number of pull calls
-	cloneCount int64  // number of clone calls
-	pullErr    error  // optional: force pull to fail
+	pullHash   string       // hash after "pull"
+	pullCount  atomic.Int64 // number of pull calls
+	cloneCount atomic.Int64 // number of clone calls
+	pullErr    error        // optional: force pull to fail
 }
 
 func newFakeGit() *fakeGit {
@@ -54,15 +54,17 @@ func (f *fakeGit) setPullErr(err error) {
 	f.pullErr = err
 }
 
+// Clone 记录模拟仓库克隆的调用次数。
 func (f *fakeGit) Clone(_ contextWrap, repoURL, localPath, branch string, depth int) error {
-	atomic.AddInt64(&f.cloneCount, 1)
+	f.cloneCount.Add(1)
 	return nil
 }
 
+// Pull 模拟拉取仓库版本并记录调用次数。
 func (f *fakeGit) Pull(_ contextWrap, localPath string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	atomic.AddInt64(&f.pullCount, 1)
+	f.pullCount.Add(1)
 	if f.pullErr != nil {
 		return f.pullErr
 	}
@@ -107,6 +109,7 @@ func TestReader_ImplementsInterface(t *testing.T) {
 	var _ source.ReadWatcher = (*Reader)(nil)
 }
 
+// TestWithPrefix_Normalized 验证脚本源前缀按既定规则规范化。
 func TestWithPrefix_Normalized(t *testing.T) {
 	cases := []struct {
 		in   string
@@ -120,7 +123,6 @@ func TestWithPrefix_Normalized(t *testing.T) {
 		{"/scripts/", "scripts/"},
 	}
 	for _, tc := range cases {
-		tc := tc
 		t.Run(tc.in, func(t *testing.T) {
 			cfg := &configOptions{}
 			WithPrefix(tc.in)(cfg)
@@ -190,6 +192,7 @@ func TestClose_NoError(t *testing.T) {
 	assert.NoError(t, src.Close())
 }
 
+// TestLoad_Concurrent 验证脚本源在并发读取时返回一致结果。
 func TestLoad_Concurrent(t *testing.T) {
 	f := newFakeGit()
 	f.set("shared.lua", []byte("-- shared body\n"))
@@ -200,7 +203,7 @@ func TestLoad_Concurrent(t *testing.T) {
 	const goroutines = 30
 	var wg sync.WaitGroup
 	wg.Add(goroutines)
-	for i := 0; i < goroutines; i++ {
+	for range goroutines {
 		go func() {
 			defer wg.Done()
 			code, err := src.Load(context.Background(), "shared.lua")
@@ -288,6 +291,7 @@ func TestWatch_NotLoaded(t *testing.T) {
 	assert.Contains(t, err.Error(), "has not been loaded")
 }
 
+// TestWatch_PullFails 验证仓库拉取失败时监听结束且不发送变更通知。
 func TestWatch_PullFails(t *testing.T) {
 	f := newFakeGit()
 	f.set("script.lua", []byte("v1"))
@@ -313,9 +317,10 @@ func TestWatch_PullFails(t *testing.T) {
 		t.Fatal("timeout waiting for channel close")
 	}
 
-	assert.Greater(t, atomic.LoadInt64(&f.pullCount), int64(0), "pull should have been attempted")
+	assert.Greater(t, f.pullCount.Load(), int64(0), "pull should have been attempted")
 }
 
+// TestWatch_Concurrent 验证多个监听者均能收到脚本变更通知。
 func TestWatch_Concurrent(t *testing.T) {
 	f := newFakeGit()
 	f.set("shared.lua", []byte("v1"))
@@ -331,7 +336,7 @@ func TestWatch_Concurrent(t *testing.T) {
 	defer cancel()
 
 	chs := make([]<-chan struct{}, watchers)
-	for i := 0; i < watchers; i++ {
+	for i := range watchers {
 		ch, err := src.Watch(ctx, "shared.lua")
 		require.NoError(t, err)
 		chs[i] = ch
@@ -340,7 +345,7 @@ func TestWatch_Concurrent(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 	f.advanceHash("newhash789")
 
-	for i := 0; i < watchers; i++ {
+	for i := range watchers {
 		select {
 		case <-chs[i]:
 		case <-ctx.Done():

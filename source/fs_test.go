@@ -225,6 +225,7 @@ func TestFSSource_Prefix_Normalization(t *testing.T) {
 	}
 }
 
+// TestFSSource_Load_Concurrent 验证文件系统脚本源的并发读取结果。
 func TestFSSource_Load_Concurrent(t *testing.T) {
 	fsys := fstest.MapFS{
 		"a.lua": &fstest.MapFile{Data: []byte("print('a')")},
@@ -241,10 +242,10 @@ func TestFSSource_Load_Concurrent(t *testing.T) {
 
 	var wg sync.WaitGroup
 	wg.Add(goroutines)
-	for i := 0; i < goroutines; i++ {
+	for range goroutines {
 		go func() {
 			defer wg.Done()
-			for j := 0; j < loops; j++ {
+			for j := range loops {
 				key := string([]byte{'a' + byte(j%3)}) + ".lua"
 				code, err := src.Load(context.Background(), key)
 				require.NoError(t, err)

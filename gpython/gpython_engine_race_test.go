@@ -6,6 +6,7 @@ import (
 	"testing"
 )
 
+// TestGPythonRace_ExecuteAndCallMixed 验证 Python 执行、宿主函数调用与全局变量注册可并发完成。
 func TestGPythonRace_ExecuteAndCallMixed(t *testing.T) {
 	eng, err := newGPythonEngine()
 	if err != nil {
@@ -28,23 +29,21 @@ func TestGPythonRace_ExecuteAndCallMixed(t *testing.T) {
 	var wg sync.WaitGroup
 	errs := make(chan error, 64)
 
-	for g := 0; g < goroutines; g++ { // exact-count serialized increments
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for i := 0; i < runs; i++ {
+	for range goroutines { // exact-count serialized increments
+		wg.Go(func() {
+			for range runs {
 				if _, err := eng.ExecuteString(context.Background(), "inc", "counter = counter + 1\n"); err != nil {
 					errs <- err
 					return
 				}
 			}
-		}()
+		})
 	}
-	for g := 0; g < goroutines; g++ { // scripted-function calls
+	for g := range goroutines { // scripted-function calls
 		wg.Add(1)
 		go func(id int) {
 			defer wg.Done()
-			for i := 0; i < runs; i++ {
+			for i := range runs {
 				a := int64(id*runs + i + 1)
 				res, err := eng.CallFunction(context.Background(), "multiply", a, int64(2))
 				if err != nil {
@@ -58,16 +57,14 @@ func TestGPythonRace_ExecuteAndCallMixed(t *testing.T) {
 			}
 		}(g)
 	}
-	wg.Add(1)
-	go func() { // global churn while the others run
-		defer wg.Done()
-		for i := 0; i < runs; i++ {
+	wg.Go(func() { // global churn while the others run
+		for i := range runs {
 			if err := eng.RegisterGlobal("churnKey", i); err != nil {
 				errs <- err
 				return
 			}
 		}
-	}()
+	})
 
 	wg.Wait()
 	close(errs)

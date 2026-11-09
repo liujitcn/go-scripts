@@ -101,6 +101,7 @@ func TestReader_ImplementsInterface(t *testing.T) {
 	var _ source.ReadWatcher = (*Reader)(nil)
 }
 
+// TestWithPrefix_Normalized 验证脚本源前缀按既定规则规范化。
 func TestWithPrefix_Normalized(t *testing.T) {
 	cases := []struct {
 		in   string
@@ -113,7 +114,6 @@ func TestWithPrefix_Normalized(t *testing.T) {
 		{"scripts/lua/", "scripts/lua/"},
 	}
 	for _, tc := range cases {
-		tc := tc
 		t.Run(tc.in, func(t *testing.T) {
 			cfg := &configOptions{}
 			WithPrefix(tc.in)(cfg)
@@ -177,6 +177,7 @@ func TestClose_NoError(t *testing.T) {
 	assert.NoError(t, src.Close())
 }
 
+// TestLoad_Concurrent 验证脚本源在并发读取时返回一致结果。
 func TestLoad_Concurrent(t *testing.T) {
 	f := newFakeRedis()
 	f.set("shared.lua", "-- shared body\n")
@@ -187,7 +188,7 @@ func TestLoad_Concurrent(t *testing.T) {
 	const goroutines = 30
 	var wg sync.WaitGroup
 	wg.Add(goroutines)
-	for i := 0; i < goroutines; i++ {
+	for range goroutines {
 		go func() {
 			defer wg.Done()
 			code, err := src.Load(context.Background(), "shared.lua")

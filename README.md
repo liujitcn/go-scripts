@@ -131,7 +131,7 @@ go-scripts/
 └── source/{database,...}/     # 数据库、配置中心、Git、HTTP、Redis、S3 源
 ```
 
-每个子目录都是独立 Go 模块，拥有自己的 `go.mod`、测试和 README。根目录不包含 `go.work`，跨模块验证时请在各模块目录使用 `GOWORK=off`。
+根目录和包含 `go.mod` 的子目录分别是独立 Go 模块，拥有各自的依赖边界。本地可使用 `go.work` 关联模块；独立验证时请在各模块目录使用 `GOWORK=off`。
 
 ## 验证
 

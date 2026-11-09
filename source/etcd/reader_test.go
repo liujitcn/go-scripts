@@ -19,7 +19,7 @@ import (
 type fakeEtcd struct {
 	mu       sync.Mutex
 	data     map[string]string
-	getHits  int64
+	getHits  atomic.Int64
 	watchers map[string][]chan clientv3.WatchResponse
 }
 
@@ -62,10 +62,11 @@ func (f *fakeEtcd) del(key string) {
 	}
 }
 
+// Get 模拟读取指定键值并记录调用次数。
 func (f *fakeEtcd) Get(_ context.Context, key string, _ ...clientv3.OpOption) (*clientv3.GetResponse, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	atomic.AddInt64(&f.getHits, 1)
+	f.getHits.Add(1)
 	val, ok := f.data[key]
 	if !ok {
 		return &clientv3.GetResponse{Kvs: nil}, nil
@@ -106,6 +107,7 @@ func TestReader_ImplementsInterface(t *testing.T) {
 	var _ source.ReadWatcher = (*Reader)(nil)
 }
 
+// TestWithPrefix_Normalized 验证脚本源前缀按既定规则规范化。
 func TestWithPrefix_Normalized(t *testing.T) {
 	cases := []struct {
 		in   string
@@ -119,7 +121,6 @@ func TestWithPrefix_Normalized(t *testing.T) {
 		{"/scripts/", "scripts/"},
 	}
 	for _, tc := range cases {
-		tc := tc
 		t.Run(tc.in, func(t *testing.T) {
 			cfg := &configOptions{}
 			WithPrefix(tc.in)(cfg)
@@ -128,6 +129,7 @@ func TestWithPrefix_Normalized(t *testing.T) {
 	}
 }
 
+// TestLoad_HappyPath 验证脚本读取成功并记录预期的远端调用次数。
 func TestLoad_HappyPath(t *testing.T) {
 	f := newFakeEtcd()
 	f.set("hello.lua", "print('hi')")
@@ -138,7 +140,7 @@ func TestLoad_HappyPath(t *testing.T) {
 	code, err := src.Load(context.Background(), "hello.lua")
 	require.NoError(t, err)
 	assert.Equal(t, "print('hi')", code)
-	assert.Equal(t, int64(1), atomic.LoadInt64(&f.getHits))
+	assert.Equal(t, int64(1), f.getHits.Load())
 }
 
 func TestLoad_NotFound_WrapsSentinel(t *testing.T) {
@@ -183,6 +185,7 @@ func TestClose_NoError(t *testing.T) {
 	assert.NoError(t, src.Close())
 }
 
+// TestLoad_Concurrent 验证脚本源在并发读取时返回一致结果。
 func TestLoad_Concurrent(t *testing.T) {
 	f := newFakeEtcd()
 	f.set("shared.lua", "-- shared body\n")
@@ -193,7 +196,7 @@ func TestLoad_Concurrent(t *testing.T) {
 	const goroutines = 30
 	var wg sync.WaitGroup
 	wg.Add(goroutines)
-	for i := 0; i < goroutines; i++ {
+	for range goroutines {
 		go func() {
 			defer wg.Done()
 			code, err := src.Load(context.Background(), "shared.lua")
@@ -202,7 +205,7 @@ func TestLoad_Concurrent(t *testing.T) {
 		}()
 	}
 	wg.Wait()
-	assert.Equal(t, int64(goroutines), atomic.LoadInt64(&f.getHits))
+	assert.Equal(t, int64(goroutines), f.getHits.Load())
 }
 
 func TestWatch_KeyModified(t *testing.T) {
@@ -291,6 +294,7 @@ func TestWatch_NotLoaded(t *testing.T) {
 	assert.Contains(t, err.Error(), "has not been loaded")
 }
 
+// TestWatch_Concurrent 验证多个监听者均能收到脚本变更通知。
 func TestWatch_Concurrent(t *testing.T) {
 	f := newFakeEtcd()
 	f.set("shared.lua", "v1")
@@ -306,7 +310,7 @@ func TestWatch_Concurrent(t *testing.T) {
 	defer cancel()
 
 	chs := make([]<-chan struct{}, watchers)
-	for i := 0; i < watchers; i++ {
+	for i := range watchers {
 		ch, err := src.Watch(ctx, "shared.lua")
 		require.NoError(t, err)
 		chs[i] = ch
@@ -315,7 +319,7 @@ func TestWatch_Concurrent(t *testing.T) {
 	time.Sleep(50 * time.Millisecond)
 	f.set("shared.lua", "v2")
 
-	for i := 0; i < watchers; i++ {
+	for i := range watchers {
 		select {
 		case <-chs[i]:
 		case <-ctx.Done():

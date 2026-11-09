@@ -529,21 +529,22 @@ func TestDebugYaegiUseImport(t *testing.T) {
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
+// TestYaegiEngine_RuntimeHook_BeforeInit 验证初始化前注册的运行时钩子按预期执行。
 func TestYaegiEngine_RuntimeHook_BeforeInit(t *testing.T) {
 	eng, err := newYaegiEngine()
 	require.NoError(t, err)
 	defer eng.Close()
 
-	var ran int32
+	var ran atomic.Int32
 	require.NoError(t, eng.AddRuntimeHook(func(ctx context.Context) error {
-		atomic.AddInt32(&ran, 1)
+		ran.Add(1)
 		return eng.RegisterFunction("Greet", func(name string) string {
 			return "hi " + name
 		})
 	}))
 
 	require.NoError(t, eng.Init(context.Background()))
-	assert.Equal(t, int32(1), atomic.LoadInt32(&ran), "hook should have run during Init")
+	assert.Equal(t, int32(1), ran.Load(), "hook should have run during Init")
 
 	_, err = eng.ExecuteString(context.Background(), "test",
 		`func add(a, b int) int { return a + b }`)
@@ -553,18 +554,19 @@ func TestYaegiEngine_RuntimeHook_BeforeInit(t *testing.T) {
 	assert.Equal(t, 7, res)
 }
 
+// TestYaegiEngine_RuntimeHook_AfterInit 验证初始化后注册运行时钩子会立即执行。
 func TestYaegiEngine_RuntimeHook_AfterInit(t *testing.T) {
 	eng := newTestEngine(t)
 	defer eng.Close()
 
-	var ran int32
+	var ran atomic.Int32
 	require.NoError(t, eng.AddRuntimeHook(func(ctx context.Context) error {
-		atomic.AddInt32(&ran, 1)
+		ran.Add(1)
 		return eng.RegisterFunction("Greet", func(name string) string {
 			return "hello " + name
 		})
 	}))
-	assert.Equal(t, int32(1), atomic.LoadInt32(&ran), "hook should run immediately after Init")
+	assert.Equal(t, int32(1), ran.Load(), "hook should run immediately after Init")
 }
 
 func TestYaegiEngine_RuntimeHook_AsCapability(t *testing.T) {

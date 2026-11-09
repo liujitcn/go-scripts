@@ -494,6 +494,7 @@ func TestStartStopWatchWithMem(t *testing.T) {
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
+// TestConcurrentExecuteCall 验证 WebAssembly 引擎并发执行和调用函数。
 func TestConcurrentExecuteCall(t *testing.T) {
 	eng := newTestEngine(t)
 	require.NoError(t, eng.LoadString(context.Background(), "add", string(addWasm)))
@@ -501,7 +502,7 @@ func TestConcurrentExecuteCall(t *testing.T) {
 	require.NoError(t, err)
 
 	var wg sync.WaitGroup
-	for i := 0; i < 20; i++ {
+	for i := range 20 {
 		wg.Add(1)
 		go func(n int) {
 			defer wg.Done()
@@ -513,16 +514,15 @@ func TestConcurrentExecuteCall(t *testing.T) {
 	wg.Wait()
 }
 
+// TestConcurrentLoadExecute 验证并发加载脚本和执行引擎。
 func TestConcurrentLoadExecute(t *testing.T) {
 	eng := newTestEngine(t)
 
 	var wg sync.WaitGroup
-	for i := 0; i < 5; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range 5 {
+		wg.Go(func() {
 			_ = eng.LoadString(context.Background(), "mod", string(addWasm))
-		}()
+		})
 	}
 	wg.Wait()
 

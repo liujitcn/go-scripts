@@ -15,7 +15,8 @@ import (
 	luar "layeh.com/gopher-luar"
 )
 
-type TableMap map[string]interface{}
+// TableMap 保存 Lua 表的字符串键值映射。
+type TableMap map[string]any
 
 type virtualMachine struct {
 	L *lua.LState
@@ -199,7 +200,8 @@ func (e *virtualMachine) ExecuteFile(filePath string) error {
 	return nil
 }
 
-func (e *virtualMachine) CallFunction(name string, args ...interface{}) {
+// CallFunction 转换 Go 参数并调用指定的 Lua 全局函数。
+func (e *virtualMachine) CallFunction(name string, args ...any) {
 	var lArgs []lua.LValue
 	for _, arg := range args {
 		lArgs = append(lArgs, e.convertToLValue(arg))
@@ -214,7 +216,8 @@ func (e *virtualMachine) CallFunction(name string, args ...interface{}) {
 	}
 }
 
-func (e *virtualMachine) PCall(f string, args ...interface{}) {
+// PCall 转换 Go 参数并保护调用 Lua 函数，失败时记录日志。
+func (e *virtualMachine) PCall(f string, args ...any) {
 	e.L.Push(e.L.GetGlobal(f))
 	for _, arg := range args {
 		val := e.convertToLValue(arg)
@@ -255,11 +258,13 @@ func (e *virtualMachine) RegisterModule(name string, mod lua.LGFunction) {
 	e.L.Call(1, 0)
 }
 
-func (e *virtualMachine) BindStruct(name string, data interface{}) {
+// BindStruct 将 Go 结构体绑定为 Lua 全局变量。
+func (e *virtualMachine) BindStruct(name string, data any) {
 	e.L.SetGlobal(name, luar.New(e.L, data))
 }
 
-func (e *virtualMachine) GetLuaTableToStruct(name string, out interface{}) error {
+// GetLuaTableToStruct 将指定的 Lua 全局表映射到 Go 结构体。
+func (e *virtualMachine) GetLuaTableToStruct(name string, out any) error {
 	return gluamapper.Map(e.L.GetGlobal(name).(*lua.LTable), &out)
 }
 
@@ -268,7 +273,8 @@ func (e *virtualMachine) doCompiledFile() error {
 	return e.L.PCall(0, lua.MultRet, nil)
 }
 
-func (e *virtualMachine) convertToLValue(val interface{}) lua.LValue {
+// convertToLValue 将受支持的 Go 值转换为 Lua 值。
+func (e *virtualMachine) convertToLValue(val any) lua.LValue {
 	if val == nil {
 		return lua.LNil
 	}
@@ -305,9 +311,9 @@ func (e *virtualMachine) convertToLValue(val interface{}) lua.LValue {
 		ud := e.L.NewUserData()
 		ud.Value = v
 		return ud
-	case map[string]interface{}:
+	case map[string]any:
 		return e.convertToLTable(v)
-	case []interface{}:
+	case []any:
 		lt := e.L.NewTable()
 		for k, v := range v {
 			lt.RawSetInt(k+1, e.convertToLValue(v))
@@ -318,7 +324,8 @@ func (e *virtualMachine) convertToLValue(val interface{}) lua.LValue {
 	}
 }
 
-func (e *virtualMachine) convertFromLValue(lv lua.LValue) interface{} {
+// convertFromLValue 将 Lua 值转换为 Go 值并区分整数与浮点数。
+func (e *virtualMachine) convertFromLValue(lv lua.LValue) any {
 	switch v := lv.(type) {
 	case *lua.LNilType:
 		return nil
@@ -339,7 +346,7 @@ func (e *virtualMachine) convertFromLValue(lv lua.LValue) interface{} {
 		maxN := v.MaxN()
 		if maxN == 0 {
 
-			ret := make(map[string]interface{})
+			ret := make(map[string]any)
 			v.ForEach(func(key, value lua.LValue) {
 				keyStr := fmt.Sprint(e.convertFromLValue(key))
 				ret[keyStr] = e.convertFromLValue(value)
@@ -347,7 +354,7 @@ func (e *virtualMachine) convertFromLValue(lv lua.LValue) interface{} {
 			return ret
 		} else {
 
-			ret := make([]interface{}, 0, maxN)
+			ret := make([]any, 0, maxN)
 			for i := 1; i <= maxN; i++ {
 				ret = append(ret, e.convertFromLValue(v.RawGetInt(i)))
 			}
@@ -359,7 +366,8 @@ func (e *virtualMachine) convertFromLValue(lv lua.LValue) interface{} {
 	}
 }
 
-func (e *virtualMachine) convertToLTable(data map[string]interface{}) *lua.LTable {
+// convertToLTable 将 Go 映射递归转换为 Lua 表。
+func (e *virtualMachine) convertToLTable(data map[string]any) *lua.LTable {
 	lt := e.L.NewTable()
 
 	for k, v := range data {
@@ -369,7 +377,8 @@ func (e *virtualMachine) convertToLTable(data map[string]interface{}) *lua.LTabl
 	return lt
 }
 
-func (e *virtualMachine) convertFromLTable(lv *lua.LTable) map[string]interface{} {
-	returnData, _ := e.convertFromLValue(lv).(map[string]interface{})
+// convertFromLTable 将 Lua 表转换为字符串键的 Go 映射。
+func (e *virtualMachine) convertFromLTable(lv *lua.LTable) map[string]any {
+	returnData, _ := e.convertFromLValue(lv).(map[string]any)
 	return returnData
 }

@@ -220,6 +220,7 @@ func TestAutoGrowEnginePool_ExecuteFromKey(t *testing.T) {
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
+// TestAutoGrowEnginePool_ConcurrentAcquireRelease 验证自动扩容池并发借还实例时不会丢失实例或返回错误。
 func TestAutoGrowEnginePool_ConcurrentAcquireRelease(t *testing.T) {
 	_, _, cleanup := withAutoGrowFactory(t, nil, nil)
 	defer cleanup()
@@ -233,15 +234,15 @@ func TestAutoGrowEnginePool_ConcurrentAcquireRelease(t *testing.T) {
 	const goroutines = 30
 	const loops = 50
 	var wg sync.WaitGroup
-	var errCount int64
+	var errCount atomic.Int64
 	wg.Add(goroutines)
-	for i := 0; i < goroutines; i++ {
+	for range goroutines {
 		go func() {
 			defer wg.Done()
-			for j := 0; j < loops; j++ {
+			for range loops {
 				eng, acqErr := pool.Acquire()
 				if acqErr != nil {
-					atomic.AddInt64(&errCount, 1)
+					errCount.Add(1)
 					continue
 				}
 				_ = eng.GetType()
@@ -250,7 +251,7 @@ func TestAutoGrowEnginePool_ConcurrentAcquireRelease(t *testing.T) {
 		}()
 	}
 	wg.Wait()
-	assert.Equal(t, int64(0), atomic.LoadInt64(&errCount))
+	assert.Equal(t, int64(0), errCount.Load())
 }
 
 ////////////////////////////////////////////////////////////////////////////////

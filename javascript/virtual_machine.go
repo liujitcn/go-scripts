@@ -84,12 +84,14 @@ func (e *virtualMachine) ExecuteFile(filePath string) error {
 	return err
 }
 
-func (e *virtualMachine) Register(name string, value interface{}) error {
+// Register 注册 JavaScript 运行时可访问的全局变量。
+func (e *virtualMachine) Register(name string, value any) error {
 	err := e.vm.Set(name, value)
 	return err
 }
 
-func (e *virtualMachine) GetFunction(name string, fn interface{}) error {
+// GetFunction 将指定的 JavaScript 函数导出到 Go 函数变量。
+func (e *virtualMachine) GetFunction(name string, fn any) error {
 	err := e.vm.ExportTo(e.vm.Get(name), fn)
 	return err
 }

@@ -343,6 +343,7 @@ func (e *engine) RegisterFunction(name string, fn any) error {
 	return nil
 }
 
+// CallFunction 查找并执行指定的脚本函数，未限定包名时回退到宿主包。
 func (e *engine) CallFunction(ctx context.Context, name string, args ...any) (any, error) {
 	if !e.IsInitialized() {
 		e.setLastError(ErrYaegiEngineNotInitialized)
@@ -359,10 +360,10 @@ func (e *engine) CallFunction(ctx context.Context, name string, args ...any) (an
 	var fnVal reflect.Value
 	var evalErr error
 
-	if strings.Contains(name, ".") {
+	if pkg, _, found := strings.Cut(name, "."); found {
 
-		parts := strings.SplitN(name, ".", 2)
-		_, _ = e.interp.Eval(`import "` + parts[0] + `"`)
+		// 导入可能已经存在，由后续求值返回实际的函数查找错误。
+		_, _ = e.interp.Eval(`import "` + pkg + `"`)
 		fnVal, evalErr = e.interp.Eval(name)
 	} else {
 

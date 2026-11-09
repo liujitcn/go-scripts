@@ -7,6 +7,7 @@ import (
 	"testing"
 )
 
+// TestStarlarkRace_ExecuteAndCallMixed 验证 Starlark 执行、宿主函数调用与变量注册可并发完成。
 func TestStarlarkRace_ExecuteAndCallMixed(t *testing.T) {
 	eng, err := newStarlarkEngine()
 	if err != nil {
@@ -26,11 +27,11 @@ func TestStarlarkRace_ExecuteAndCallMixed(t *testing.T) {
 	var wg sync.WaitGroup
 	errs := make(chan error, 64)
 
-	for g := 0; g < goroutines; g++ { // per-run distinct globals
+	for g := range goroutines { // per-run distinct globals
 		wg.Add(1)
 		go func(id int) {
 			defer wg.Done()
-			for i := 0; i < runs; i++ {
+			for i := range runs {
 				script := fmt.Sprintf("g_%d_%d = %q\n", id, i, fmt.Sprintf("v%d_%d", id, i))
 				if _, err := eng.ExecuteString(context.Background(), "set", script); err != nil {
 					errs <- err
@@ -39,11 +40,11 @@ func TestStarlarkRace_ExecuteAndCallMixed(t *testing.T) {
 			}
 		}(g)
 	}
-	for g := 0; g < goroutines; g++ { // scripted-function calls
+	for g := range goroutines { // scripted-function calls
 		wg.Add(1)
 		go func(id int) {
 			defer wg.Done()
-			for i := 0; i < runs; i++ {
+			for i := range runs {
 				a := int64(id*runs + i)
 				res, err := eng.CallFunction(context.Background(), "add", a, a)
 				if err != nil {
@@ -57,16 +58,14 @@ func TestStarlarkRace_ExecuteAndCallMixed(t *testing.T) {
 			}
 		}(g)
 	}
-	wg.Add(1)
-	go func() { // global churn while the others run
-		defer wg.Done()
-		for i := 0; i < runs; i++ {
+	wg.Go(func() { // global churn while the others run
+		for i := range runs {
 			if err := eng.RegisterGlobal("churnKey", i); err != nil {
 				errs <- err
 				return
 			}
 		}
-	}()
+	})
 
 	wg.Wait()
 	close(errs)

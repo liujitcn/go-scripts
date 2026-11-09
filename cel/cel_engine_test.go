@@ -615,29 +615,29 @@ func TestCEL_StringMethods(t *testing.T) {
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
+// TestConcurrentExecute 验证并发执行已加载脚本的结果。
 func TestConcurrentExecute(t *testing.T) {
 	eng := newTestEngine(t)
 	require.NoError(t, eng.LoadString(context.Background(), "expr", "1 + 2"))
 
 	var wg sync.WaitGroup
-	for i := 0; i < 20; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range 20 {
+		wg.Go(func() {
 			result, err := eng.Execute(context.Background())
 			assert.NoError(t, err)
 			assert.NotNil(t, result)
-		}()
+		})
 	}
 	wg.Wait()
 }
 
+// TestConcurrentRegisterAndExecute 验证全局变量注册与脚本执行并发进行。
 func TestConcurrentRegisterAndExecute(t *testing.T) {
 	eng := newTestEngine(t)
 	require.NoError(t, eng.RegisterGlobal("counter", int64(0)))
 
 	var wg sync.WaitGroup
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		wg.Add(1)
 		go func(n int) {
 			defer wg.Done()

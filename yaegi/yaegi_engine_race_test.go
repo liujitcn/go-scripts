@@ -6,6 +6,7 @@ import (
 	"testing"
 )
 
+// TestYaegiRace_ExecuteAndCallMixed 验证 Go 脚本执行、函数调用及取消请求可并发完成。
 func TestYaegiRace_ExecuteAndCallMixed(t *testing.T) {
 	eng := newTestEngine(t)
 	defer eng.Close()
@@ -20,11 +21,9 @@ func TestYaegiRace_ExecuteAndCallMixed(t *testing.T) {
 	var wg sync.WaitGroup
 	errs := make(chan error, 64)
 
-	for g := 0; g < 3; g++ { // exact-value runs
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for i := 0; i < 10; i++ {
+	for range 3 { // exact-value runs
+		wg.Go(func() {
+			for range 10 {
 				res, err := eng.ExecuteString(context.Background(), "expr", "1 + 2")
 				if err != nil {
 					errs <- err
@@ -35,13 +34,13 @@ func TestYaegiRace_ExecuteAndCallMixed(t *testing.T) {
 					return
 				}
 			}
-		}()
+		})
 	}
-	for g := 0; g < 3; g++ { // scripted-function calls
+	for g := range 3 { // scripted-function calls
 		wg.Add(1)
 		go func(id int) {
 			defer wg.Done()
-			for i := 0; i < 10; i++ {
+			for i := range 10 {
 				a := id*10 + i
 				res, err := eng.CallFunction(context.Background(), "add", a, a)
 				if err != nil {
@@ -55,17 +54,15 @@ func TestYaegiRace_ExecuteAndCallMixed(t *testing.T) {
 			}
 		}(g)
 	}
-	for g := 0; g < 2; g++ { // pre-cancelled contexts fail fast, engine unharmed
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for i := 0; i < 10; i++ {
+	for range 2 { // pre-cancelled contexts fail fast, engine unharmed
+		wg.Go(func() {
+			for range 10 {
 				if _, err := eng.ExecuteString(cancelled, "never", "1 + 2"); err == nil {
 					errs <- context.Canceled
 					return
 				}
 			}
-		}()
+		})
 	}
 
 	wg.Wait()

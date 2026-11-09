@@ -3,6 +3,7 @@ package starlark
 import (
 	"context"
 	"fmt"
+	"maps"
 	"reflect"
 	"sync"
 
@@ -180,6 +181,7 @@ func (e *engine) LoadString(_ context.Context, name string, code string) error {
 // 脚本执行。
 ////////////////////////////////////////////////////////////////////////////////
 
+// Execute 依次执行已加载脚本并合并脚本全局变量。
 func (e *engine) Execute(_ context.Context) (any, error) {
 	if !e.IsInitialized() {
 		e.setLastError(ErrStarlarkEngineNotInitialized)
@@ -195,9 +197,7 @@ func (e *engine) Execute(_ context.Context) (any, error) {
 	scripts := make([]scriptEntry, len(e.scripts))
 	copy(scripts, e.scripts)
 	hostPredeclared := make(starlark.StringDict, len(e.hostPredeclared))
-	for k, v := range e.hostPredeclared {
-		hostPredeclared[k] = v
-	}
+	maps.Copy(hostPredeclared, e.hostPredeclared)
 	e.mu.RUnlock()
 
 	e.execMu.Lock()
@@ -206,12 +206,8 @@ func (e *engine) Execute(_ context.Context) (any, error) {
 	for _, s := range scripts {
 
 		predeclared := make(starlark.StringDict)
-		for k, v := range hostPredeclared {
-			predeclared[k] = v
-		}
-		for k, v := range e.scriptGlobals {
-			predeclared[k] = v
-		}
+		maps.Copy(predeclared, hostPredeclared)
+		maps.Copy(predeclared, e.scriptGlobals)
 
 		thread := &starlark.Thread{Name: s.name}
 		globals, err := starlark.ExecFile(thread, s.name, s.src, predeclared)
@@ -221,9 +217,7 @@ func (e *engine) Execute(_ context.Context) (any, error) {
 			return nil, wrapped
 		}
 
-		for k, v := range globals {
-			e.scriptGlobals[k] = v
-		}
+		maps.Copy(e.scriptGlobals, globals)
 	}
 
 	e.ClearError()
@@ -263,6 +257,7 @@ func (e *engine) ExecuteFromKeys(ctx context.Context, keys []string) ([]any, err
 	return results, nil
 }
 
+// ExecuteString 执行指定源码并保留脚本产生的全局变量。
 func (e *engine) ExecuteString(_ context.Context, name string, code string) (any, error) {
 	if !e.IsInitialized() {
 		e.setLastError(ErrStarlarkEngineNotInitialized)
@@ -271,21 +266,15 @@ func (e *engine) ExecuteString(_ context.Context, name string, code string) (any
 
 	e.mu.RLock()
 	hostPredeclared := make(starlark.StringDict, len(e.hostPredeclared))
-	for k, v := range e.hostPredeclared {
-		hostPredeclared[k] = v
-	}
+	maps.Copy(hostPredeclared, e.hostPredeclared)
 	e.mu.RUnlock()
 
 	e.execMu.Lock()
 	defer e.execMu.Unlock()
 
 	predeclared := make(starlark.StringDict)
-	for k, v := range hostPredeclared {
-		predeclared[k] = v
-	}
-	for k, v := range e.scriptGlobals {
-		predeclared[k] = v
-	}
+	maps.Copy(predeclared, hostPredeclared)
+	maps.Copy(predeclared, e.scriptGlobals)
 
 	thread := &starlark.Thread{Name: name}
 	globals, err := starlark.ExecFile(thread, name, code, predeclared)
@@ -295,9 +284,7 @@ func (e *engine) ExecuteString(_ context.Context, name string, code string) (any
 		return nil, wrapped
 	}
 
-	for k, v := range globals {
-		e.scriptGlobals[k] = v
-	}
+	maps.Copy(e.scriptGlobals, globals)
 
 	e.ClearError()
 	return nil, nil

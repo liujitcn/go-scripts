@@ -16,6 +16,7 @@ func RegisterCrypto(L *lua.LState, logger hostmodule.Logger) {
 	L.PreloadModule("kratos_crypto", LoaderCrypto(logger))
 }
 
+// buildCryptoModule 构造 Lua 加密模块并注册加解密及摘要函数。
 func buildCryptoModule(L *lua.LState, logger hostmodule.Logger) {
 
 	cryptoModule := L.NewTable()
@@ -57,7 +58,7 @@ func buildCryptoModule(L *lua.LState, logger hostmodule.Logger) {
 	cryptoModule.RawSetString("encrypt_payload", L.NewFunction(func(L *lua.LState) int {
 		payloadTable := L.CheckTable(1)
 
-		payloadMap := convert.ToGoValue(payloadTable).(map[string]interface{})
+		payloadMap := convert.ToGoValue(payloadTable).(map[string]any)
 
 		encrypted, err := hostmodule.EncryptPayload(payloadMap, "task_id", "task_type")
 		if err != nil {
@@ -73,7 +74,7 @@ func buildCryptoModule(L *lua.LState, logger hostmodule.Logger) {
 	cryptoModule.RawSetString("decrypt_payload", L.NewFunction(func(L *lua.LState) int {
 		encryptedTable := L.CheckTable(1)
 
-		encryptedMap := convert.ToGoValue(encryptedTable).(map[string]interface{})
+		encryptedMap := convert.ToGoValue(encryptedTable).(map[string]any)
 
 		decrypted, err := hostmodule.DecryptPayload(encryptedMap)
 		if err != nil {
@@ -89,7 +90,7 @@ func buildCryptoModule(L *lua.LState, logger hostmodule.Logger) {
 	cryptoModule.RawSetString("has_encrypted_payload", L.NewFunction(func(L *lua.LState) int {
 		payloadTable := L.CheckTable(1)
 
-		payloadMap := convert.ToGoValue(payloadTable).(map[string]interface{})
+		payloadMap := convert.ToGoValue(payloadTable).(map[string]any)
 
 		hasEncrypted := hostmodule.HasEncryptedPayload(payloadMap)
 		L.Push(lua.LBool(hasEncrypted))
@@ -126,7 +127,7 @@ func buildCryptoModule(L *lua.LState, logger hostmodule.Logger) {
 			return 0
 		}
 
-		var result interface{}
+		var result any
 		if err := json.Unmarshal([]byte(decrypted), &result); err != nil {
 			L.RaiseError("JSON unmarshal failed: %v", err)
 			return 0

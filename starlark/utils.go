@@ -126,13 +126,14 @@ func callHostFunc(fn any, args []any) any {
 	return results[0].Interface()
 }
 
+// callHostFuncFromStarlark 将 Starlark 参数转换为 Go 值并执行宿主函数。
 func callHostFuncFromStarlark(fn any, args starlark.Tuple) (starlark.Value, error) {
 	fnVal := reflect.ValueOf(fn)
 	fnType := fnVal.Type()
 
 	numIn := fnType.NumIn()
 	goArgs := make([]any, numIn)
-	for i := 0; i < numIn; i++ {
+	for i := range numIn {
 		if i < len(args) {
 			goArgs[i] = starlarkToGo(args[i])
 		}

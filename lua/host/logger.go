@@ -10,7 +10,8 @@ import (
 	"github.com/liujitcn/go-scripts/lua/convert"
 )
 
-func convertForFormat(val interface{}) interface{} {
+// convertForFormat 将可精确表示为整数的浮点数转换为整数以保持日志格式。
+func convertForFormat(val any) any {
 	if f, ok := val.(float64); ok {
 
 		if f == math.Floor(f) && !math.IsInf(f, 0) && !math.IsNaN(f) {
@@ -25,6 +26,7 @@ func RegisterLogger(L *lua.LState, logger hostmodule.Logger) {
 	L.PreloadModule("kratos_logger", LoaderLogger(logger))
 }
 
+// LoaderLogger 加载 Lua 日志模块及格式化日志函数。
 func LoaderLogger(logger hostmodule.Logger) lua.LGFunction {
 	return func(L *lua.LState) int {
 
@@ -64,7 +66,7 @@ func LoaderLogger(logger hostmodule.Logger) lua.LGFunction {
 
 		logModule.RawSetString("infof", L.NewFunction(func(L *lua.LState) int {
 			format := L.CheckString(1)
-			args := make([]interface{}, L.GetTop()-1)
+			args := make([]any, L.GetTop()-1)
 			for i := 2; i <= L.GetTop(); i++ {
 				args[i-2] = convertForFormat(convert.ToGoValue(L.Get(i)))
 			}
@@ -74,7 +76,7 @@ func LoaderLogger(logger hostmodule.Logger) lua.LGFunction {
 
 		logModule.RawSetString("errorf", L.NewFunction(func(L *lua.LState) int {
 			format := L.CheckString(1)
-			args := make([]interface{}, L.GetTop()-1)
+			args := make([]any, L.GetTop()-1)
 			for i := 2; i <= L.GetTop(); i++ {
 				args[i-2] = convertForFormat(convert.ToGoValue(L.Get(i)))
 			}
@@ -84,7 +86,7 @@ func LoaderLogger(logger hostmodule.Logger) lua.LGFunction {
 
 		logModule.RawSetString("warnf", L.NewFunction(func(L *lua.LState) int {
 			format := L.CheckString(1)
-			args := make([]interface{}, L.GetTop()-1)
+			args := make([]any, L.GetTop()-1)
 			for i := 2; i <= L.GetTop(); i++ {
 				args[i-2] = convertForFormat(convert.ToGoValue(L.Get(i)))
 			}
@@ -94,7 +96,7 @@ func LoaderLogger(logger hostmodule.Logger) lua.LGFunction {
 
 		logModule.RawSetString("debugf", L.NewFunction(func(L *lua.LState) int {
 			format := L.CheckString(1)
-			args := make([]interface{}, L.GetTop()-1)
+			args := make([]any, L.GetTop()-1)
 			for i := 2; i <= L.GetTop(); i++ {
 				args[i-2] = convertForFormat(convert.ToGoValue(L.Get(i)))
 			}

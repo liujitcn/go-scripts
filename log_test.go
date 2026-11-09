@@ -158,6 +158,7 @@ func TestNewSlogLogger_Defaults(t *testing.T) {
 	})
 }
 
+// TestSetLogger_Concurrent 验证并发切换日志实现与记录日志。
 func TestSetLogger_Concurrent(t *testing.T) {
 	prev := GetLogger()
 	defer SetLogger(prev)
@@ -166,8 +167,7 @@ func TestSetLogger_Concurrent(t *testing.T) {
 	var wg sync.WaitGroup
 	wg.Add(goroutines)
 
-	for i := 0; i < goroutines; i++ {
-		i := i
+	for i := range goroutines {
 		go func() {
 			defer wg.Done()
 			if i%2 == 0 {

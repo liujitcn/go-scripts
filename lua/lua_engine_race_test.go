@@ -11,6 +11,7 @@ import (
 
 const busyLoopScript = "local s = 0 for i = 1, 20000000 do s = s + i end"
 
+// TestLuaRace_ConcurrentExecuteString 验证并发执行 Lua 源码的结果。
 func TestLuaRace_ConcurrentExecuteString(t *testing.T) {
 	e := newStartedEngine(t)
 	defer func() { waitForClose(t, e) }()
@@ -23,17 +24,15 @@ func TestLuaRace_ConcurrentExecuteString(t *testing.T) {
 
 	var wg sync.WaitGroup
 	errs := make(chan error, goroutines*runs)
-	for g := 0; g < goroutines; g++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for i := 0; i < runs; i++ {
+	for range goroutines {
+		wg.Go(func() {
+			for range runs {
 				if _, err := e.ExecuteString(context.Background(), "inc", "counter = (counter or 0) + 1"); err != nil {
 					errs <- err
 					return
 				}
 			}
-		}()
+		})
 	}
 	wg.Wait()
 	close(errs)
@@ -50,6 +49,7 @@ func TestLuaRace_ConcurrentExecuteString(t *testing.T) {
 	}
 }
 
+// TestLuaRace_ConcurrentCallFunction 验证并发调用 Lua 函数的结果。
 func TestLuaRace_ConcurrentCallFunction(t *testing.T) {
 	e := newStartedEngine(t)
 	defer func() { waitForClose(t, e) }()
@@ -62,11 +62,11 @@ func TestLuaRace_ConcurrentCallFunction(t *testing.T) {
 
 	var wg sync.WaitGroup
 	errs := make(chan error, goroutines*calls)
-	for g := 0; g < goroutines; g++ {
+	for g := range goroutines {
 		wg.Add(1)
 		go func(id int) {
 			defer wg.Done()
-			for i := 0; i < calls; i++ {
+			for i := range calls {
 				a := int64(id*calls + i)
 				res, err := e.CallFunction(context.Background(), "add", a, a)
 				if err != nil {
@@ -151,6 +151,7 @@ func TestLuaRace_CloseConcurrentWithCancelledRun(t *testing.T) {
 	}
 }
 
+// TestLuaRace_MixedSyncAsyncAndQuota 验证配额约束下同步、异步执行及函数调用可并发完成。
 func TestLuaRace_MixedSyncAsyncAndQuota(t *testing.T) {
 	e := newStartedEngine(t)
 	defer func() { waitForClose(t, e) }()
@@ -168,20 +169,16 @@ func TestLuaRace_MixedSyncAsyncAndQuota(t *testing.T) {
 	errs := make(chan error, 64)
 	fail := func(op string, err error) { errs <- &opError{op: op, err: err} }
 
-	wg.Add(1)
-	go func() { // ExecuteSync under quota
-		defer wg.Done()
-		for i := 0; i < 10; i++ {
+	wg.Go(func() { // ExecuteSync under quota
+		for range 10 {
 			if _, err := e.ExecuteSync(context.Background()); err != nil {
 				fail("ExecuteSync", err)
 				return
 			}
 		}
-	}()
-	wg.Add(1)
-	go func() { // Execute (LoadString + run)
-		defer wg.Done()
-		for i := 0; i < 10; i++ {
+	})
+	wg.Go(func() { // Execute (LoadString + run)
+		for range 10 {
 			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 			err := e.LoadString(ctx, "m", "raceN = (raceN or 0) + 1")
 			if err == nil {
@@ -193,11 +190,9 @@ func TestLuaRace_MixedSyncAsyncAndQuota(t *testing.T) {
 				return
 			}
 		}
-	}()
-	wg.Add(1)
-	go func() { // cancelled-context ExecuteString on a FINITE script (completes before deadline)
-		defer wg.Done()
-		for i := 0; i < 10; i++ {
+	})
+	wg.Go(func() { // cancelled-context ExecuteString on a FINITE script (completes before deadline)
+		for range 10 {
 			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 			if _, err := e.ExecuteString(ctx, "finite", "local s = 0 for i = 1, 1000 do s = s + i end"); err != nil {
 				cancel()
@@ -206,10 +201,8 @@ func TestLuaRace_MixedSyncAsyncAndQuota(t *testing.T) {
 			}
 			cancel()
 		}
-	}()
-	wg.Add(1)
-	go func() { // CallFunction
-		defer wg.Done()
+	})
+	wg.Go(func() { // CallFunction
 		for i := 1; i <= 10; i++ {
 			res, err := e.CallFunction(context.Background(), "mul", int64(i), int64(3))
 			if err != nil {
@@ -221,7 +214,7 @@ func TestLuaRace_MixedSyncAsyncAndQuota(t *testing.T) {
 				return
 			}
 		}
-	}()
+	})
 
 	wg.Wait()
 	close(errs)
@@ -239,16 +232,15 @@ func (e *opError) Error() string {
 	return e.op + ": " + e.err.Error()
 }
 
+// TestLuaRace_EngineChurnCrossPool 验证多个 Lua 引擎反复创建、执行和关闭时状态不串扰。
 func TestLuaRace_EngineChurnCrossPool(t *testing.T) {
 	const workers, iterations = 4, 3
 
 	var wg sync.WaitGroup
 	errs := make(chan error, workers)
-	for w := 0; w < workers; w++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for i := 0; i < iterations; i++ {
+	for range workers {
+		wg.Go(func() {
+			for range iterations {
 				e, err := newLuaEngine()
 				if err != nil {
 					errs <- err
@@ -282,7 +274,7 @@ func TestLuaRace_EngineChurnCrossPool(t *testing.T) {
 					return
 				}
 			}
-		}()
+		})
 	}
 	wg.Wait()
 	close(errs)
@@ -291,6 +283,7 @@ func TestLuaRace_EngineChurnCrossPool(t *testing.T) {
 	}
 }
 
+// TestLuaRace_ConcurrentLoadExecute 验证并发替换已加载脚本与执行不会破坏引擎状态。
 func TestLuaRace_ConcurrentLoadExecute(t *testing.T) {
 	e := newStartedEngine(t)
 	defer func() { waitForClose(t, e) }()
@@ -306,9 +299,7 @@ func TestLuaRace_ConcurrentLoadExecute(t *testing.T) {
 	stop := make(chan struct{})
 
 	var loader sync.WaitGroup
-	loader.Add(1)
-	go func() { // rotating loader
-		defer loader.Done()
+	loader.Go(func() { // rotating loader
 		for i := 0; ; i++ {
 			select {
 			case <-stop:
@@ -320,18 +311,16 @@ func TestLuaRace_ConcurrentLoadExecute(t *testing.T) {
 				return
 			}
 		}
-	}()
-	for g := 0; g < 4; g++ {
-		executors.Add(1)
-		go func() {
-			defer executors.Done()
-			for i := 0; i < 50; i++ {
+	})
+	for range 4 {
+		executors.Go(func() {
+			for range 50 {
 				if _, err := e.Execute(context.Background()); err != nil {
 					errs <- err
 					return
 				}
 			}
-		}()
+		})
 	}
 
 	finished := make(chan struct{})
@@ -351,16 +340,15 @@ func TestLuaRace_ConcurrentLoadExecute(t *testing.T) {
 	}
 }
 
+// TestLuaRace_SetQuotaConcurrentWithRuns 验证执行过程中并发调整配额不会破坏引擎状态。
 func TestLuaRace_SetQuotaConcurrentWithRuns(t *testing.T) {
 	e := newStartedEngine(t)
 	defer func() { waitForClose(t, e) }()
 
 	stop := make(chan struct{})
 	var togglers sync.WaitGroup
-	for i := 0; i < 2; i++ {
-		togglers.Add(1)
-		go func() {
-			defer togglers.Done()
+	for range 2 {
+		togglers.Go(func() {
 			for {
 				select {
 				case <-stop:
@@ -370,16 +358,14 @@ func TestLuaRace_SetQuotaConcurrentWithRuns(t *testing.T) {
 					e.SetQuota(script_engine.Quota{})
 				}
 			}
-		}()
+		})
 	}
 
 	var wg sync.WaitGroup
 	errs := make(chan error, 32)
-	for g := 0; g < 2; g++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for i := 0; i < 20; i++ {
+	for range 2 {
+		wg.Go(func() {
+			for range 20 {
 				err := e.LoadString(context.Background(), "m", "local s = 0 for i = 1, 100 do s = s + i end")
 				if err != nil {
 					errs <- err
@@ -390,7 +376,7 @@ func TestLuaRace_SetQuotaConcurrentWithRuns(t *testing.T) {
 					return
 				}
 			}
-		}()
+		})
 	}
 	wg.Wait()
 	close(stop)

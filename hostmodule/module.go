@@ -118,10 +118,7 @@ func ModuleUtil(maxSleep ...time.Duration) ModuleDef {
 		Name: "util",
 		Funcs: map[string]any{
 			"sleep": func(seconds float64) {
-				d := time.Duration(seconds * float64(time.Second))
-				if d > cap {
-					d = cap
-				}
+				d := min(time.Duration(seconds*float64(time.Second)), cap)
 				time.Sleep(d)
 			},
 			"time": func() int64 {

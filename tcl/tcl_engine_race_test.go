@@ -6,6 +6,7 @@ import (
 	"testing"
 )
 
+// TestTCLRace_ExecuteAndCallMixed 验证 Tcl 执行、宿主函数调用与变量注册可并发完成。
 func TestTCLRace_ExecuteAndCallMixed(t *testing.T) {
 	eng := getSharedEngine(t)
 
@@ -22,11 +23,9 @@ proc add {a b} {
 	var wg sync.WaitGroup
 	errs := make(chan error, 64)
 
-	for g := 0; g < goroutines; g++ { // exact-value expression runs
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for i := 0; i < runs; i++ {
+	for range goroutines { // exact-value expression runs
+		wg.Go(func() {
+			for range runs {
 				res, err := eng.ExecuteString(context.Background(), "expr", "expr {1 + 2}")
 				if err != nil {
 					errs <- err
@@ -37,13 +36,13 @@ proc add {a b} {
 					return
 				}
 			}
-		}()
+		})
 	}
-	for g := 0; g < goroutines; g++ { // proc calls
+	for g := range goroutines { // proc calls
 		wg.Add(1)
 		go func(id int) {
 			defer wg.Done()
-			for i := 0; i < runs; i++ {
+			for i := range runs {
 				a := int64(id*runs + i)
 				res, err := eng.CallFunction(context.Background(), "add", a, a)
 				if err != nil {

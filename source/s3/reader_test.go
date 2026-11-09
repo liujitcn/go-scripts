@@ -72,13 +72,13 @@ func (f *fakeS3) setEtag(key, body, etag string) {
 	f.objects[key] = prev
 }
 
+// handler 模拟指定桶中的对象读取、元数据查询及错误响应。
 func (f *fakeS3) handler(bucket string, w http.ResponseWriter, r *http.Request) {
-	parts := strings.SplitN(strings.TrimPrefix(r.URL.Path, "/"), "/", 2)
-	if len(parts) != 2 || parts[0] != bucket {
+	pathBucket, key, found := strings.Cut(strings.TrimPrefix(r.URL.Path, "/"), "/")
+	if !found || pathBucket != bucket {
 		http.Error(w, "unknown bucket", http.StatusNotFound)
 		return
 	}
-	key := parts[1]
 
 	f.mu.Lock()
 	obj, ok := f.objects[key]
@@ -93,7 +93,7 @@ func (f *fakeS3) handler(bucket string, w http.ResponseWriter, r *http.Request) 
 	w.Header().Set("Last-Modified", obj.modified.UTC().Format(http.TimeFormat))
 	checksum := crc32.Checksum([]byte(obj.body), crc32cTable)
 	sumBuf := make([]byte, 4)
-	for i := 0; i < 4; i++ {
+	for i := range 4 {
 		sumBuf[i] = byte(checksum >> (24 - i*8))
 	}
 	w.Header().Set("x-amz-checksum-crc32c", base64.StdEncoding.EncodeToString(sumBuf))
@@ -142,6 +142,7 @@ func TestNew_RequiresBucket(t *testing.T) {
 	assert.Contains(t, err.Error(), "bucket")
 }
 
+// TestWithPrefix_Normalized 验证脚本源前缀按既定规则规范化。
 func TestWithPrefix_Normalized(t *testing.T) {
 	cases := []struct {
 		in   string
@@ -155,7 +156,6 @@ func TestWithPrefix_Normalized(t *testing.T) {
 		{"/scripts/", "scripts/"},
 	}
 	for _, tc := range cases {
-		tc := tc
 		t.Run(tc.in, func(t *testing.T) {
 			cfg := &configOptions{}
 			WithPrefix(tc.in)(cfg)
@@ -238,6 +238,7 @@ func TestClose_NoError(t *testing.T) {
 	assert.NoError(t, src.Close())
 }
 
+// TestLoad_Concurrent 验证脚本源在并发读取时返回一致结果。
 func TestLoad_Concurrent(t *testing.T) {
 	f := newFakeS3(t, "test-bucket")
 	f.set("shared.lua", "-- shared body\n")
@@ -248,7 +249,7 @@ func TestLoad_Concurrent(t *testing.T) {
 	const goroutines = 30
 	var wg sync.WaitGroup
 	wg.Add(goroutines)
-	for i := 0; i < goroutines; i++ {
+	for range goroutines {
 		go func() {
 			defer wg.Done()
 			code, err := src.Load(context.Background(), "shared.lua")

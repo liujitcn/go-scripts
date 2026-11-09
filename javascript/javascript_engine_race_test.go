@@ -25,11 +25,12 @@ func newStartedJSEngine(t *testing.T) *engine {
 	return eng
 }
 
+// TestJSRace_StickyInterruptNotPoisoned 验证超时执行遗留的中断状态不会污染后续脚本。
 func TestJSRace_StickyInterruptNotPoisoned(t *testing.T) {
 	eng := newStartedJSEngine(t)
 	defer func() { _ = eng.Close() }()
 
-	for i := 0; i < 6; i++ {
+	for i := range 6 {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
 		_, err := eng.ExecuteString(ctx, "runaway.js", jsRunaway)
 		cancel()
@@ -47,6 +48,7 @@ func TestJSRace_StickyInterruptNotPoisoned(t *testing.T) {
 	}
 }
 
+// TestJSRace_CancelledRunsMixedWithNormal 验证已取消的执行不会破坏并发正常脚本及宿主函数调用。
 func TestJSRace_CancelledRunsMixedWithNormal(t *testing.T) {
 	eng := newStartedJSEngine(t)
 	defer func() { _ = eng.Close() }()
@@ -58,11 +60,9 @@ func TestJSRace_CancelledRunsMixedWithNormal(t *testing.T) {
 	var wg sync.WaitGroup
 	errs := make(chan error, 64)
 
-	for g := 0; g < 3; g++ { // deadline-budgeted runaways: must abort with an interrupt
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for i := 0; i < 3; i++ {
+	for range 3 { // deadline-budgeted runaways: must abort with an interrupt
+		wg.Go(func() {
+			for range 3 {
 				ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
 				_, err := eng.ExecuteString(ctx, "runaway.js", jsRunaway)
 				cancel()
@@ -71,13 +71,11 @@ func TestJSRace_CancelledRunsMixedWithNormal(t *testing.T) {
 					return
 				}
 			}
-		}()
+		})
 	}
-	for g := 0; g < 3; g++ { // normal runs: exact results, zero tolerance for poison
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for i := 0; i < 20; i++ {
+	for range 3 { // normal runs: exact results, zero tolerance for poison
+		wg.Go(func() {
+			for range 20 {
 				res, err := eng.ExecuteString(context.Background(), "ok.js", "21 * 2")
 				if err != nil {
 					errs <- err
@@ -88,13 +86,13 @@ func TestJSRace_CancelledRunsMixedWithNormal(t *testing.T) {
 					return
 				}
 			}
-		}()
+		})
 	}
-	for g := 0; g < 2; g++ { // host-function calls: exact results
+	for g := range 2 { // host-function calls: exact results
 		wg.Add(1)
 		go func(id int) {
 			defer wg.Done()
-			for i := 0; i < 20; i++ {
+			for i := range 20 {
 				a := float64(id*100 + i)
 				res, err := eng.CallFunction(context.Background(), "add", a, 1)
 				if err != nil {
@@ -164,6 +162,7 @@ func TestJSRace_CloseConcurrentWithCancelledRun(t *testing.T) {
 	}
 }
 
+// TestJSRace_ExecuteSyncQuotaConcurrentWithAsync 验证配额约束下的同步执行不会污染并发异步执行。
 func TestJSRace_ExecuteSyncQuotaConcurrentWithAsync(t *testing.T) {
 	eng := newStartedJSEngine(t)
 	defer func() { _ = eng.Close() }()
@@ -173,11 +172,9 @@ func TestJSRace_ExecuteSyncQuotaConcurrentWithAsync(t *testing.T) {
 	var wg sync.WaitGroup
 	errs := make(chan error, 64)
 
-	for g := 0; g < 2; g++ { // runaway sync runs under quota
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for i := 0; i < 3; i++ {
+	for range 2 { // runaway sync runs under quota
+		wg.Go(func() {
+			for range 3 {
 				if err := eng.LoadString(context.Background(), "runaway.js", jsRunaway); err != nil {
 					errs <- err
 					return
@@ -187,13 +184,11 @@ func TestJSRace_ExecuteSyncQuotaConcurrentWithAsync(t *testing.T) {
 					return
 				}
 			}
-		}()
+		})
 	}
-	for g := 0; g < 2; g++ { // normal async runs: exact results
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for i := 0; i < 15; i++ {
+	for range 2 { // normal async runs: exact results
+		wg.Go(func() {
+			for range 15 {
 				res, err := eng.ExecuteString(context.Background(), "ok.js", "21 * 2")
 				if err != nil {
 					errs <- err
@@ -204,7 +199,7 @@ func TestJSRace_ExecuteSyncQuotaConcurrentWithAsync(t *testing.T) {
 					return
 				}
 			}
-		}()
+		})
 	}
 
 	done := make(chan struct{})

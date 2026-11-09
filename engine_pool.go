@@ -30,7 +30,7 @@ func NewEnginePool(size int, typ Type) (*EnginePool, error) {
 
 	// 逐个创建并初始化引擎，失败时清理已创建实例。
 	created := make([]Engine, 0, size)
-	for i := 0; i < size; i++ {
+	for range size {
 		eng, err := NewScriptEngine(typ)
 		if err != nil {
 			// 清理已经创建的实例。

@@ -40,7 +40,8 @@ func (f *fakeHookEngine) RegisterHook(name, description string) error {
 	return f.registerErr
 }
 
-func (f *fakeHookEngine) AddScript(hookName string, script interface{}) error {
+// AddScript 记录添加脚本的测试调用并返回预设错误。
+func (f *fakeHookEngine) AddScript(hookName string, script any) error {
 	if s, ok := script.(Script); ok {
 		f.addScriptCalls = append(f.addScriptCalls, fakeAddScriptCall{hookName, s})
 	}

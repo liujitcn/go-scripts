@@ -6,6 +6,7 @@ import (
 	"testing"
 )
 
+// TestExprRace_ExecuteAndCallMixed 验证表达式执行、宿主函数调用与全局变量注册可并发完成。
 func TestExprRace_ExecuteAndCallMixed(t *testing.T) {
 	eng, err := newExprEngine()
 	if err != nil {
@@ -23,11 +24,9 @@ func TestExprRace_ExecuteAndCallMixed(t *testing.T) {
 	var wg sync.WaitGroup
 	errs := make(chan error, 64)
 
-	for g := 0; g < 3; g++ { // exact-value expression runs
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for i := 0; i < 20; i++ {
+	for range 3 { // exact-value expression runs
+		wg.Go(func() {
+			for range 20 {
 				res, err := eng.ExecuteString(context.Background(), "expr", "1 + 2")
 				if err != nil {
 					errs <- err
@@ -38,13 +37,13 @@ func TestExprRace_ExecuteAndCallMixed(t *testing.T) {
 					return
 				}
 			}
-		}()
+		})
 	}
-	for g := 0; g < 3; g++ { // host-function calls
+	for g := range 3 { // host-function calls
 		wg.Add(1)
 		go func(id int) {
 			defer wg.Done()
-			for i := 0; i < 20; i++ {
+			for i := range 20 {
 				x := id*100 + i
 				res, err := eng.CallFunction(context.Background(), "triple", x)
 				if err != nil {
@@ -58,16 +57,14 @@ func TestExprRace_ExecuteAndCallMixed(t *testing.T) {
 			}
 		}(g)
 	}
-	wg.Add(1)
-	go func() { // registration churn while the others run
-		defer wg.Done()
-		for i := 0; i < 20; i++ {
+	wg.Go(func() { // registration churn while the others run
+		for i := range 20 {
 			if err := eng.RegisterGlobal("churnKey", i); err != nil {
 				errs <- err
 				return
 			}
 		}
-	}()
+	})
 
 	wg.Wait()
 	close(errs)

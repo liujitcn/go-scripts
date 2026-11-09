@@ -51,7 +51,7 @@ func NewAutoGrowEnginePoolWithFactory(initialSize, maxSize int, factory EngineFa
 
 	// 构建初始实例集合，任一失败时清理全部已创建实例。
 	created := make([]Engine, 0, initialSize)
-	for i := 0; i < initialSize; i++ {
+	for range initialSize {
 		eng, err := p.factory(ctx)
 		if err != nil {
 			for _, e := range created {

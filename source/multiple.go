@@ -70,6 +70,7 @@ func (ms *MultiSource) loadFallback(ctx context.Context, key string) (string, er
 	return "", fmt.Errorf("multi source(fallback): all sources failed for %q: %w", key, errors.Join(errs...))
 }
 
+// loadFirstOK 并发读取各脚本源并返回首个成功结果，取消其余读取。
 func (ms *MultiSource) loadFirstOK(ctx context.Context, key string) (string, error) {
 	type result struct {
 		code string
@@ -81,7 +82,6 @@ func (ms *MultiSource) loadFirstOK(ctx context.Context, key string) (string, err
 
 	ch := make(chan result, len(ms.sources))
 	for _, s := range ms.sources {
-		s := s
 		go func() {
 			code, err := s.Load(ctx, key)
 			ch <- result{code, err}

@@ -3,6 +3,7 @@ package source
 import (
 	"context"
 	"errors"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -105,6 +106,7 @@ func TestLoad_InnerError(t *testing.T) {
 	assert.Contains(t, err.Error(), "transform source: load")
 }
 
+// TestLoad_KeySpecificTransform 验证脚本源按键选择转换逻辑并保留其他脚本。
 func TestLoad_KeySpecificTransform(t *testing.T) {
 	mem := NewMemSource()
 	mem.Set("encrypted.lua", "ENCRYPTED_DATA")
@@ -113,9 +115,7 @@ func TestLoad_KeySpecificTransform(t *testing.T) {
 	decryptIfNeeded := TransformFunc(func(key string, raw string) (string, error) {
 		if strings.HasPrefix(key, "encrypted") {
 			runes := []rune(raw)
-			for i, j := 0, len(runes)-1; i < j; i, j = i+1, j-1 {
-				runes[i], runes[j] = runes[j], runes[i]
-			}
+			slices.Reverse(runes)
 			return string(runes), nil
 		}
 		return raw, nil
@@ -134,6 +134,7 @@ func TestLoad_KeySpecificTransform(t *testing.T) {
 	assert.Equal(t, "print('hello')", code)
 }
 
+// TestTransformSource_Load_Concurrent 验证脚本转换源的并发读取结果。
 func TestTransformSource_Load_Concurrent(t *testing.T) {
 	mem := NewMemSource()
 	mem.Set("shared.lua", "body")
@@ -145,7 +146,7 @@ func TestTransformSource_Load_Concurrent(t *testing.T) {
 	const goroutines = 30
 	var wg sync.WaitGroup
 	wg.Add(goroutines)
-	for i := 0; i < goroutines; i++ {
+	for range goroutines {
 		go func() {
 			defer wg.Done()
 			code, err := src.Load(context.Background(), "shared.lua")

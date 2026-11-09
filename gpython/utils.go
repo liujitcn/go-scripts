@@ -3,6 +3,7 @@ package gpython
 import (
 	"fmt"
 	"reflect"
+	"strings"
 
 	"github.com/go-python/gpython/py"
 )
@@ -100,16 +101,18 @@ func createPythonCallable(name string, fn any) py.Object {
 	return py.None
 }
 
+// buildPythonCallCode 按函数名和参数数量生成 Python 调用源码。
 func buildPythonCallCode(name string, numArgs int) string {
 	if numArgs == 0 {
 		return name + "()"
 	}
-	code := name + "(__arg0__"
+	var code strings.Builder
+	code.WriteString(name + "(__arg0__")
 	for i := 1; i < numArgs; i++ {
-		code += fmt.Sprintf(", __arg%d__", i)
+		code.WriteString(fmt.Sprintf(", __arg%d__", i))
 	}
-	code += ")"
-	return code
+	code.WriteString(")")
+	return code.String()
 }
 
 func callHostFunc(fn any, args []any) any {

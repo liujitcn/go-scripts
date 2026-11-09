@@ -230,7 +230,7 @@ func TestCount_AndScriptCount_AcrossHooks(t *testing.T) {
 	assert.Equal(t, 3, r.ScriptCount())
 }
 
-// 互斥锁保护下最终计数必须精确一致，且对同一钩子的重复注册除首次外全部报错
+// TestRegistry_ConcurrentOperations 互斥锁保护下最终计数必须精确一致，且对同一钩子的重复注册除首次外全部报错
 func TestRegistry_ConcurrentOperations(t *testing.T) {
 	r := hook.NewRegistry()
 
@@ -241,11 +241,11 @@ func TestRegistry_ConcurrentOperations(t *testing.T) {
 	var registerOK, registerDup, addFailed atomic.Int64
 
 	var wg sync.WaitGroup
-	for g := 0; g < goroutines; g++ {
+	for g := range goroutines {
 		wg.Add(1)
 		go func(g int) {
 			defer wg.Done()
-			for i := 0; i < perGoroutine; i++ {
+			for range perGoroutine {
 				// 并发写：同名钩子竞争注册，仅首个成功；错误逐个计数，不吞。
 				if err := r.RegisterHook("hook", ""); err != nil {
 					registerDup.Add(1)
