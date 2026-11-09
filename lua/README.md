@@ -16,9 +16,9 @@ GopherLua 是纯 Go 实现的 Lua 5.1 虚拟机，与 C 风格的 Lua C API 风�
 - **统一接口**：实现 [`script_engine.Engine`](../engine.go) 接口，可与 [`Manager`](../manager.go)、[`EnginePool`](../engine_pool.go)、[`AutoGrowEnginePool`](../engine_pool_autogrow.go) 等根模块组件无缝配合。
 - **工厂自动注册**：通过 `init()` 注册到 [`script_engine`](../factory.go) 全局工厂表，只需 `import _ "github.com/liujitcn/go-scripts/lua"` 即可启用。
 - **并发安全**：内部用 `sync.RWMutex` 保护 VM / source / initialized；`Execute*` / `CallFunction` 通过 channel + `ctx.Done()` 支持取消和超时。
-- **LState 复用池**：本模块自带 [`statePool`](state_pool.go)，在 engine `Init` 时借出、`Close` 时归还，默认上限 10 个 LState 实例，避免每次脚本运行都重建虚拟机。
+- **状态隔离**：每个 VM 使用独立 LState，关闭时释放，不继承其他执行实例污染的变量或标准库。
 - **脚本源解耦**：通过 `Source` 接口（`FileSource` / `MemSource` / `MultiSource` / 自定义扩展）注入脚本来源，engine 本身不再耦合任何 IO 细节。
-- **标准 Lua 生态**：`Init` 时开启 Lua 标准库（支持 [`AllowedLib*`](virtual_machine.go) 沙箱白名单按需开启）+ **选择性预载** [`gopher-lua-libs`](https://github.com/vadv/gopher-lua-libs) 的 json / http client 与 [`gluacrypto`](https://github.com/tengattack/gluacrypto)（聚合式 `libs.Preload` 会拖入 aws-sdk 等重依赖，刻意不用）+ `GetLuaPath` 辅助函数；宿主业务模块（`kratos_*`）见 [`host`](host/README.md)。
+- **标准 Lua 生态**：`Init` 时默认开启计算库（支持 [`AllowedLib*`](virtual_machine.go) 沙箱白名单按需开启）+ **选择性预载** [`gopher-lua-libs`](https://github.com/vadv/gopher-lua-libs) 的 json（HTTP 需要显式授权）与 [`gluacrypto`](https://github.com/tengattack/gluacrypto)（聚合式 `libs.Preload` 会拖入 aws-sdk 等重依赖，刻意不用）+ `GetLuaPath` 辅助函数；宿主业务模块（`kratos_*`）见 [`host`](host/README.md)。
 
 ## gopher-lua 的几点限制（务必留意）
 
@@ -125,7 +125,7 @@ results, err := pool.ExecuteFromKeys(ctx, []string{"a.lua", "b.lua"})
 
 | 方法 | 说明 |
 |---|---|
-| `Init(ctx)` | 从 `statePool` 借出 LState 并开启标准库；必须在任何 Load*/Execute* 之前调用 |
+| `Init(ctx)` | 创建独立 LState 并按白名单开启库；必须在任何 Load*/Execute* 之前调用 |
 | `Close()` | 归还 LState 到池中，调用后需重新 Init 才能复用 |
 | `IsInitialized()` | 查询初始化状态 |
 
@@ -248,22 +248,21 @@ print(mathutil.square(2))        -- 4
 
 > 注意：上面的 `RegisterModule` 走的是 gopher-lua 自带的 loader 协议（`L.NewFunction + L.Call`），与 `script/test_module.lua` 中展示的"`module` 表 + `return module`"写法用于 **`require` 加载场景**。两者并不冲突，可以并存。
 
-### Lua 内置模块（已自动启用）
+### Lua 库与显式授权
 
-`virtualMachine.init()` 时自动开启以下库：
+默认启用计算库、JSON、安全时间子集和只查找预加载模块的 `require`。其他能力由宿主使用 `SetOpenLibs` 显式授权；自定义名单同时包含业务所需的计算库。`SetHTTPClient` 注入受控传输并保留原有证书、Cookie、超时配置。
 
 | 库 | 来源 | 用途 |
 |---|---|---|
-| `string` / `table` / `math` / `io` / `os` / `debug` / `package` | gopher-lua 标准库 | Lua 5.1 内置 |
+| `string` / `table` / `math` / `coroutine` | gopher-lua 标准库 | 默认启用 |
+| `os.clock/date/difftime/time` | gopher-lua 标准库 | 默认只开放时间函数 |
+| `io` / 完整 `os` / `debug` / 磁盘加载 | gopher-lua 标准库 | 仅在操作系统沙箱内显式授权 |
 | `json` | gopher-lua-libs | JSON 编解码 |
-| `http` | gopher-lua-libs | HTTP 客户端 |
-| `regexp` | gopher-lua-libs | 正则匹配（基于 Go regexp） |
-| `db` | gopher-lua-libs | MySQL / SQLite / PostgreSQL 访问 |
-| `time` | gopher-lua-libs | 时间操作 |
-| `crypto` | gluacrypto | md5 / sha / hmac / aes / des / rsa 等 |
-| `GetLuaPath()` | 本模块自定义 | 返回当前可执行文件目录下的 `script` 子目录，方便拼接 `package.path` |
+| `http` / `http_client` | gopher-lua-libs | 使用 `AllowedLibHTTP` 授权 |
+| `crypto` | gluacrypto | 使用 `AllowedLibCrypto` 授权 |
+| `GetLuaPath()` | 本模块自定义 | 使用 `AllowedLibLoad` 授权后注册 |
 
-`require` 标准 Lua 写法可用：
+下面的磁盘模块加载示例需要 `AllowedLibLoad`：
 
 ```lua
 -- script/test_module.lua

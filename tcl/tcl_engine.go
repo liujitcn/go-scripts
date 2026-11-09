@@ -7,6 +7,11 @@ import (
 	"reflect"
 	"strings"
 	"sync"
+	"sync/atomic"
+	"time"
+
+	"modernc.org/libc"
+	libtcl "modernc.org/tcl/lib"
 
 	"modernc.org/tcl"
 
@@ -28,7 +33,8 @@ type scriptEntry struct {
 //
 
 type engine struct {
-	interp *tcl.Interp
+	openLibs []string
+	interp   *tcl.Interp
 
 	scripts []scriptEntry
 
@@ -37,6 +43,7 @@ type engine struct {
 	source      source.Reader
 	initialized bool
 	lastError   error
+	quota       atomic.Pointer[script_engine.Quota]
 
 	mu          sync.RWMutex // protects initialized, scripts, source, hostFuncs
 	execMu      sync.Mutex   // protects interp
@@ -59,40 +66,71 @@ func (e *engine) GetType() script_engine.Type {
 	return script_engine.TclType
 }
 
+// SetOpenLibs 设置由隔离宿主批准的原生命令；必须在 Init 前调用，不能由脚本请求自行授权。
+func (e *engine) SetOpenLibs(names ...string) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.openLibs = append([]string(nil), names...)
+}
+
+// Init 创建安全解释器，保留计算和宿主注册能力，禁止直接访问操作系统资源。
 func (e *engine) Init(_ context.Context) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-
 	if e.initialized {
-		e.setLastError(ErrTCLEngineAlreadyInitialized)
 		return ErrTCLEngineAlreadyInitialized
 	}
-
+	var err error
 	if os.Getenv("TCL_LIBRARY") == "" {
-		if mountPoint, err := tcl.MountLibraryVFS(); err == nil {
-			os.Setenv("TCL_LIBRARY", mountPoint)
+		var mountPoint string
+		mountPoint, err = tcl.MountLibraryVFS()
+		if err != nil {
+			return fmt.Errorf("初始化 TCL 内置库失败: %w", err)
+		}
+		err = os.Setenv("TCL_LIBRARY", mountPoint)
+		if err != nil {
+			return err
 		}
 	}
-
-	interp, err := tcl.NewInterp()
+	var interp *tcl.Interp
+	interp, err = tcl.NewInterp()
 	if err != nil {
-		wrapped := fmt.Errorf("tcl engine: create interpreter: %w", err)
-		e.setLastError(wrapped)
-		return wrapped
+		return fmt.Errorf("创建 TCL 解释器失败: %w", err)
 	}
-
+	if libtcl.XTcl_MakeSafe(interp.TLS(), interp.Handle()) != libtcl.TCL_OK {
+		err = interp.Close()
+		if err != nil {
+			return fmt.Errorf("关闭 TCL 解释器失败: %w", err)
+		}
+		return fmt.Errorf("无法启用 TCL 安全解释器")
+	}
+	for _, name := range e.openLibs {
+		var pointer uintptr
+		pointer, err = libc.CString(name)
+		if err != nil {
+			return err
+		}
+		status := libtcl.XTcl_ExposeCommand(interp.TLS(), interp.Handle(), pointer, pointer)
+		libc.Xfree(interp.TLS(), pointer)
+		if status != libtcl.TCL_OK {
+			closeErr := interp.Close()
+			if closeErr != nil {
+				return fmt.Errorf("释放 TCL 解释器失败: %w", closeErr)
+			}
+			return fmt.Errorf("TCL 宿主能力未注册: %s", name)
+		}
+	}
 	e.execMu.Lock()
 	e.interp = interp
 	e.execMu.Unlock()
-
 	e.scripts = nil
 	e.hostFuncs = make(map[string]any)
 	e.initialized = true
 	e.lastError = nil
-
 	return nil
 }
 
+// Close 释放解释器和监听资源，执行结束前不会关闭仍在运行的解释器。
 func (e *engine) Close() error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -106,6 +144,7 @@ func (e *engine) Close() error {
 
 	e.execMu.Lock()
 
+	err := e.interp.Close()
 	e.interp = nil
 	e.execMu.Unlock()
 
@@ -117,6 +156,9 @@ func (e *engine) Close() error {
 	e.lastError = nil
 	e.lastErrorMu.Unlock()
 
+	if err != nil {
+		return fmt.Errorf("关闭 TCL 解释器失败: %w", err)
+	}
 	return nil
 }
 
@@ -194,7 +236,8 @@ func (e *engine) LoadString(_ context.Context, name string, code string) error {
 // 脚本执行。
 ////////////////////////////////////////////////////////////////////////////////
 
-func (e *engine) Execute(_ context.Context) (any, error) {
+// Execute 按顺序执行已加载脚本，并对每次解释器求值应用上下文取消。
+func (e *engine) Execute(ctx context.Context) (any, error) {
 	if !e.IsInitialized() {
 		e.setLastError(ErrTCLEngineNotInitialized)
 		return nil, ErrTCLEngineNotInitialized
@@ -220,7 +263,7 @@ func (e *engine) Execute(_ context.Context) (any, error) {
 
 	var lastResult string
 	for _, s := range scripts {
-		result, err := e.interp.Eval(s.src)
+		result, err := e.evaluate(ctx, s.src)
 		if err != nil {
 			wrapped := fmt.Errorf("%w: %s: %v", ErrTCLEvalFailed, s.name, err)
 			e.setLastError(wrapped)
@@ -266,7 +309,8 @@ func (e *engine) ExecuteFromKeys(ctx context.Context, keys []string) ([]any, err
 	return results, nil
 }
 
-func (e *engine) ExecuteString(_ context.Context, name string, code string) (any, error) {
+// ExecuteString 在安全解释器中执行源码，超时或取消会中断解释器。
+func (e *engine) ExecuteString(ctx context.Context, name string, code string) (any, error) {
 	if !e.IsInitialized() {
 		e.setLastError(ErrTCLEngineNotInitialized)
 		return nil, ErrTCLEngineNotInitialized
@@ -280,7 +324,7 @@ func (e *engine) ExecuteString(_ context.Context, name string, code string) (any
 		return nil, ErrTCLEngineNotInitialized
 	}
 
-	result, err := e.interp.Eval(code)
+	result, err := e.evaluate(ctx, code)
 	if err != nil {
 		wrapped := fmt.Errorf("%w: %s: %v", ErrTCLEvalFailed, name, err)
 		e.setLastError(wrapped)
@@ -295,58 +339,48 @@ func (e *engine) ExecuteString(_ context.Context, name string, code string) (any
 
 ////////////////////////////////////////////////////////////////////////////////
 
+// RegisterGlobal 使用 Tcl 对象接口传值，变量名和内容不经过源码拼接或求值。
 func (e *engine) RegisterGlobal(name string, value any) error {
 	if !e.IsInitialized() {
-		e.setLastError(ErrTCLEngineNotInitialized)
 		return ErrTCLEngineNotInitialized
 	}
-
-	tclVal := goToTCLString(value)
-	script := fmt.Sprintf("set %s %s", name, tclVal)
-
 	e.execMu.Lock()
 	defer e.execMu.Unlock()
-
-	if e.interp == nil {
-		e.setLastError(ErrTCLEngineNotInitialized)
-		return ErrTCLEngineNotInitialized
-	}
-
-	_, err := e.interp.Eval(script)
+	pointer, err := libc.CString(name)
 	if err != nil {
-		wrapped := fmt.Errorf("tcl engine: register global %q: %w", name, err)
-		e.setLastError(wrapped)
-		return wrapped
+		return err
 	}
-
+	defer libc.Xfree(e.interp.TLS(), pointer)
+	var object uintptr
+	object, err = newTclValue(e.interp, value)
+	if err != nil {
+		return err
+	}
+	if libtcl.XTcl_SetVar2Ex(e.interp.TLS(), e.interp.Handle(), pointer, 0, object, 0) == 0 {
+		return fmt.Errorf("设置 TCL 变量失败")
+	}
 	e.ClearError()
 	return nil
 }
 
+// GetGlobal 读取变量对象而不执行由变量名拼接的脚本。
 func (e *engine) GetGlobal(name string) (any, error) {
 	if !e.IsInitialized() {
-		e.setLastError(ErrTCLEngineNotInitialized)
 		return nil, ErrTCLEngineNotInitialized
 	}
-
 	e.execMu.Lock()
 	defer e.execMu.Unlock()
-
-	if e.interp == nil {
-		e.setLastError(ErrTCLEngineNotInitialized)
-		return nil, ErrTCLEngineNotInitialized
-	}
-
-	script := fmt.Sprintf("set %s", name)
-	result, err := e.interp.Eval(script)
+	pointer, err := libc.CString(name)
 	if err != nil {
-		wrapped := fmt.Errorf("%w: %s", ErrTCLGlobalNotFound, name)
-		e.setLastError(wrapped)
-		return nil, wrapped
+		return nil, err
 	}
-
+	defer libc.Xfree(e.interp.TLS(), pointer)
+	result := libtcl.XTcl_GetVar(e.interp.TLS(), e.interp.Handle(), pointer, 0)
+	if result == 0 {
+		return nil, fmt.Errorf("%w: %s", ErrTCLGlobalNotFound, name)
+	}
 	e.ClearError()
-	return parseTCLValue(result), nil
+	return parseTCLValue(libc.GoString(result)), nil
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -582,4 +616,46 @@ func (e *engine) stopAllWatchers() {
 		cancel()
 		delete(e.watchers, key)
 	}
+}
+
+// SetQuota 设置解释器求值的时间预算。
+func (e *engine) SetQuota(quota script_engine.Quota) {
+	e.quota.Store(&quota)
+}
+
+// evaluate 在持有解释器执行锁时同步求值，并等待原生取消回调结束后才释放解释器。
+func (e *engine) evaluate(ctx context.Context, code string) (string, error) {
+	timeout := time.Duration(0)
+	if quota := e.quota.Load(); quota != nil {
+		timeout = quota.Timeout
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if timeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, timeout)
+		defer cancel()
+	}
+	if ctx.Err() != nil {
+		return "", ctx.Err()
+	}
+	finished := make(chan struct{})
+	interpreter := e.interp.Handle()
+	stop := context.AfterFunc(ctx, func() {
+		tls := libc.NewTLS()
+		defer tls.Close()
+		libtcl.XTcl_CancelEval(tls, interpreter, 0, 0, libtcl.TCL_CANCEL_UNWIND)
+		close(finished)
+	})
+	defer func() {
+		if !stop() {
+			<-finished
+		}
+	}()
+	result, err := e.interp.Eval(code)
+	if ctx.Err() != nil {
+		return "", fmt.Errorf("%w: %w", script_engine.ErrQuotaExceeded, ctx.Err())
+	}
+	return result, err
 }

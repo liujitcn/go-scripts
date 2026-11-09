@@ -669,38 +669,22 @@ func TestLuaEngine_OpenLibs_DefaultOpensAll(t *testing.T) {
 	assert.Equal(t, int64(5), v)
 }
 
+// TestLuaEngine_OpenLibs_SandboxDropsDangerous 验证默认保留时间和计算能力，宿主文件与命令操作不可用。
 func TestLuaEngine_OpenLibs_SandboxDropsDangerous(t *testing.T) {
 	eng, err := newLuaEngine()
 	require.NoError(t, err)
 	defer eng.Close()
-
-	eng.SetOpenLibs(
-		AllowedLibBase, AllowedLibTab, AllowedLibStr, AllowedLibMath, AllowedLibCoroutine,
-	)
-	require.NoError(t, eng.Init(context.Background()))
-
-	_, err = eng.ExecuteString(context.Background(), "sandbox.lua",
-		`_G.os_type = type(os)`)
-	if assert.NoError(t, err) {
-		v, gerr := eng.GetGlobal("os_type")
-		require.NoError(t, gerr)
-		assert.Equal(t, "nil", v, "os library should be dropped in sandbox mode")
-	}
-
-	_, err = eng.ExecuteString(context.Background(), "sandbox2.lua",
-		`_G.io_type = type(io)`)
-	if assert.NoError(t, err) {
-		v, gerr := eng.GetGlobal("io_type")
-		require.NoError(t, gerr)
-		assert.Equal(t, "nil", v, "io library should be dropped in sandbox mode")
-	}
-
-	_, err = eng.ExecuteString(context.Background(), "sandbox3.lua",
-		`_G.strlen = string.len("hello")`)
+	eng.SetOpenLibs(AllowedLibBase, AllowedLibTab, AllowedLibStr, AllowedLibMath, AllowedLibCoroutine)
+	require.NoError(t, eng.Init(t.Context()))
+	_, err = eng.ExecuteString(t.Context(), "sandbox.lua", `
+assert(type(os) == "table")
+assert(type(os.time()) == "number")
+assert(os.execute == nil and os.remove == nil and os.rename == nil and os.getenv == nil)
+assert(io == nil and dofile == nil and loadfile == nil)
+assert(package.path == "" and package.cpath == "" and package.loadlib == nil)
+assert(string.len("hello") == 5)
+`)
 	require.NoError(t, err)
-	v, err := eng.GetGlobal("strlen")
-	require.NoError(t, err)
-	assert.Equal(t, int64(5), v, "string library should still work")
 }
 
 ////////////////////////////////////////////////////////////////////////////////

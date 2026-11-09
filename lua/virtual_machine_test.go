@@ -2,6 +2,8 @@ package lua
 
 import (
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -77,19 +79,31 @@ func TestVirtualMachine_ExecuteFile(t *testing.T) {
 	fmt.Println("Lua set your token to:", u.Token())
 }
 
+// TestVirtualMachine_HttpModule 验证显式授权后两种 HTTP 模块入口均可请求业务服务。
 func TestVirtualMachine_HttpModule(t *testing.T) {
-	exe := newVirtualMachine(nil)
-	defer exe.Destroy()
-
-	err := exe.LoadFile("./script/test_http.lua")
-	assert.Nil(t, err)
-
-	err = exe.Execute()
-	assert.Nil(t, err)
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		_, _ = writer.Write([]byte("approved-response"))
+	}))
+	defer server.Close()
+	for _, module := range []string{"http", "http_client"} {
+		t.Run(module, func(t *testing.T) {
+			exe := newVirtualMachine([]string{AllowedLibBase, AllowedLibStr, AllowedLibHTTP})
+			defer exe.Destroy()
+			err := exe.LoadString(fmt.Sprintf(`local http = require(%q)
+local client = http.client()
+local result, err = client:do_request(http.request("GET", %q))
+assert(err == nil, err)
+assert(result.body == "approved-response")`, module, server.URL))
+			if assert.NoError(t, err) {
+				assert.NoError(t, exe.Execute())
+			}
+		})
+	}
 }
 
+// TestVirtualMachine_LoadModule 验证宿主显式开放文件模块加载后原有脚本仍然可用。
 func TestVirtualMachine_LoadModule(t *testing.T) {
-	exe := newVirtualMachine(nil)
+	exe := newVirtualMachine([]string{AllowedLibBase, AllowedLibStr, AllowedLibLoad})
 	defer exe.Destroy()
 
 	err := exe.LoadFile("./script/test_load_module.lua")
@@ -99,8 +113,9 @@ func TestVirtualMachine_LoadModule(t *testing.T) {
 	assert.Nil(t, err)
 }
 
+// TestVirtualMachine_CryptoModule 验证显式授权的加密扩展保留原有功能。
 func TestVirtualMachine_CryptoModule(t *testing.T) {
-	exe := newVirtualMachine(nil)
+	exe := newVirtualMachine([]string{AllowedLibBase, AllowedLibStr, AllowedLibCrypto})
 	defer exe.Destroy()
 
 	err := exe.LoadFile("./script/test_crypto.lua")

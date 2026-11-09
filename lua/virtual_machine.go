@@ -2,6 +2,7 @@ package lua
 
 import (
 	"fmt"
+	nethttp "net/http"
 	"os"
 	"path/filepath"
 
@@ -9,6 +10,7 @@ import (
 
 	"github.com/tengattack/gluacrypto"
 	"github.com/vadv/gopher-lua-libs/http"
+	httpclient "github.com/vadv/gopher-lua-libs/http/client"
 	"github.com/vadv/gopher-lua-libs/json"
 	"github.com/yuin/gluamapper"
 	lua "github.com/yuin/gopher-lua"
@@ -22,12 +24,14 @@ type virtualMachine struct {
 	L *lua.LState
 	F *lua.LFunction
 
-	openLibs []string
+	openLibs   []string
+	httpClient *nethttp.Client
 }
 
+// newVirtualMachine 为每个执行实例创建干净状态，禁止从共享 VM 继承变量或高权限库。
 func newVirtualMachine(openLibs []string) *virtualMachine {
 	exec := &virtualMachine{
-		L:        luaPool.Borrow(),
+		L:        luaPool.createLuaState(),
 		openLibs: openLibs,
 	}
 	exec.init()
@@ -45,7 +49,12 @@ func GetRunPath() string {
 }
 
 const (
+	// AllowedLibBase 允许使用 Lua 基础计算库。
 	AllowedLibBase = lua.BaseLibName
+	// AllowedLibHTTP 显式允许网络扩展，仅供具有受控网络环境的宿主使用。
+	AllowedLibHTTP = "http"
+	// AllowedLibCrypto 显式允许加密扩展。
+	AllowedLibCrypto = "crypto"
 
 	AllowedLibLoad      = lua.LoadLibName
 	AllowedLibTab       = lua.TabLibName
@@ -79,25 +88,98 @@ func (e *virtualMachine) init() {
 
 //
 
+// initBuiltinLibs 默认开放计算、JSON 和时间能力，文件与网络能力需要宿主显式授权。
 func (e *virtualMachine) initBuiltinLibs() {
 	if len(e.openLibs) == 0 {
-		e.L.OpenLibs()
-	} else {
-		e.openAllowedLibs()
+		e.openLibs = []string{AllowedLibBase, AllowedLibTab, AllowedLibStr, AllowedLibMath, AllowedLibCoroutine}
 	}
-
+	// require 保留，但默认只允许预加载模块，不能从磁盘查找并执行源码。
+	e.L.Push(e.L.NewFunction(lua.OpenPackage))
+	e.L.Push(lua.LString(lua.LoadLibName))
+	e.L.Call(1, 0)
+	e.openAllowedLibs()
+	allowed := make(map[string]bool, len(e.openLibs))
+	for _, name := range e.openLibs {
+		allowed[name] = true
+	}
 	json.Preload(e.L)
-	http.Preload(e.L)
-
-	gluacrypto.Preload(e.L)
-
-	e.RegisterFunction("GetLuaPath", func(vm *lua.LState) int {
-
-		e.L.Push(lua.LString(GetRunPath() + "/script"))
-		return 1
-	})
+	if allowed[AllowedLibHTTP] {
+		http.Preload(e.L)
+		e.L.PreloadModule("http", e.loadHTTP)
+		e.L.PreloadModule("http_client", e.loadHTTPClient)
+	}
+	if allowed[AllowedLibCrypto] {
+		gluacrypto.Preload(e.L)
+	}
+	if !allowed[AllowedLibLoad] {
+		packageTable := e.L.GetGlobal("package").(*lua.LTable)
+		originalLoaders := e.L.GetField(packageTable, "loaders").(*lua.LTable)
+		loaders := e.L.NewTable()
+		loaders.RawSetInt(1, originalLoaders.RawGetInt(1))
+		e.L.SetField(packageTable, "loaders", loaders)
+		e.L.SetField(e.L.Get(lua.RegistryIndex), "_LOADERS", loaders)
+		e.L.SetField(packageTable, "path", lua.LString(""))
+		e.L.SetField(packageTable, "cpath", lua.LString(""))
+		e.L.SetField(packageTable, "loadlib", lua.LNil)
+		e.L.SetGlobal("dofile", lua.LNil)
+		e.L.SetGlobal("loadfile", lua.LNil)
+	}
+	if !allowed[AllowedLibOs] {
+		e.L.Push(e.L.NewFunction(lua.OpenOs))
+		e.L.Push(lua.LString(lua.OsLibName))
+		e.L.Call(1, 0)
+		original := e.L.GetGlobal("os").(*lua.LTable)
+		safeTime := e.L.NewTable()
+		for _, name := range []string{"clock", "date", "difftime", "time"} {
+			safeTime.RawSetString(name, original.RawGetString(name))
+		}
+		e.L.SetGlobal("os", safeTime)
+	}
+	if allowed[AllowedLibLoad] {
+		e.RegisterFunction("GetLuaPath", func(vm *lua.LState) int {
+			vm.Push(lua.LString(GetRunPath() + "/script"))
+			return 1
+		})
+	}
 }
 
+// loadHTTP 保留标准 http 模块，仅替换客户端工厂的出站传输。
+func (e *virtualMachine) loadHTTP(state *lua.LState) int {
+	count := http.Loader(state)
+	module := state.Get(-1).(*lua.LTable)
+	module.RawSetString("client", state.NewFunction(e.newHTTPClient))
+	return count
+}
+
+// loadHTTPClient 为直接加载 http_client 的调用应用同一受控传输。
+func (e *virtualMachine) loadHTTPClient(state *lua.LState) int {
+	count := httpclient.Loader(state)
+	module := state.Get(-1).(*lua.LTable)
+	module.RawSetString("client", state.NewFunction(e.newHTTPClient))
+	return count
+}
+
+// newHTTPClient 注入宿主代理和拨号器，同时保留脚本的证书、Cookie、超时和请求头配置。
+func (e *virtualMachine) newHTTPClient(state *lua.LState) int {
+	count := httpclient.New(state)
+	if e.httpClient == nil {
+		return count
+	}
+	client := state.Get(-1).(*lua.LUserData).Value.(*httpclient.LuaClient)
+	if approved, ok := e.httpClient.Transport.(*nethttp.Transport); ok {
+		transport := client.Transport.(*nethttp.Transport).Clone()
+		transport.Proxy = approved.Proxy
+		transport.DialContext = approved.DialContext
+		transport.DialTLSContext = nil
+		client.Transport = transport
+	} else {
+		client.Transport = e.httpClient.Transport
+	}
+	client.CheckRedirect = e.httpClient.CheckRedirect
+	return count
+}
+
+// openAllowedLibs 只注册宿主声明的标准库，扩展库由独立加载器处理。
 func (e *virtualMachine) openAllowedLibs() {
 	allowed := make(map[string]struct{}, len(e.openLibs))
 	for _, name := range e.openLibs {
@@ -149,9 +231,10 @@ func (e *virtualMachine) ClearGlobals(names []string) {
 	}
 }
 
+// Destroy 关闭执行实例，不将修改后的全局表或库状态放回共享池。
 func (e *virtualMachine) Destroy() {
 	if e.L != nil {
-		luaPool.Return(e.L)
+		e.L.Close()
 	}
 }
 

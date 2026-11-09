@@ -24,7 +24,7 @@ TCL 引擎使用 [modernc.org/tcl](https://pkg.go.dev/modernc.org/tcl) 库 —�
 | 热更新 | 支持 `StartWatch` / `StopWatch` |
 | 类型常量 | `scriptEngine.TclType` |
 
-> **平台注意**：在 Windows 上，`modernc.org/tcl` 的 `Close()` 可能出现 notifier 死锁。引擎在 Go 层面正确清理状态，但底层解释器的销毁依赖进程退出。
+默认使用 Tcl 原生安全解释器，隐藏文件、命令及环境访问；宿主可用 `SetOpenLibs` 显式恢复指定命令，执行不可信源码时同时启用操作系统沙箱。取消使用 Tcl 原生中断，等待执行结束再释放解释器。
 
 ---
 

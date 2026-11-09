@@ -4,12 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"strings"
 	"sync"
 
+	lua "github.com/yuin/gopher-lua"
+
 	script_engine "github.com/liujitcn/go-scripts"
 	"github.com/liujitcn/go-scripts/source"
-	lua "github.com/yuin/gopher-lua"
 )
 
 func init() {
@@ -31,7 +33,8 @@ type engine struct {
 
 	businessGlobals map[string]struct{}
 
-	openLibs []string
+	openLibs   []string
+	httpClient *http.Client
 
 	quota *script_engine.Quota
 
@@ -65,6 +68,13 @@ func (e *engine) SetOpenLibs(libs ...string) {
 	e.openLibs = libs
 }
 
+// SetHTTPClient 在初始化前注入受控网络客户端，保留 Lua HTTP API 及原有 TLS 参数。
+func (e *engine) SetHTTPClient(client *http.Client) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.httpClient = client
+}
+
 func (e *engine) Init(ctx context.Context) error {
 
 	e.mu.Lock()
@@ -75,6 +85,7 @@ func (e *engine) Init(ctx context.Context) error {
 	}
 
 	e.vm = newVirtualMachine(e.openLibs)
+	e.vm.httpClient = e.httpClient
 	e.businessGlobals = make(map[string]struct{})
 	e.initialized = true
 	e.ClearError()

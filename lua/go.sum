@@ -107,8 +107,8 @@ github.com/kylelemons/godebug v1.1.0/go.mod h1:9/0rRGxNHcop5bhtWyNeEfOS8JIWk580+
 github.com/lib/pq v1.10.9/go.mod h1:AlVN5x4E4T544tWzH6hKfbfQvm3HdbOxrmggDNAPY9o=
 github.com/lib/pq v1.12.3 h1:tTWxr2YLKwIvK90ZXEw8GP7UFHtcbTtty8zsI+YjrfQ=
 github.com/lib/pq v1.12.3/go.mod h1:/p+8NSbOcwzAEI7wiMXFlgydTwcgTr3OSKMsD2BitpA=
-github.com/liujitcn/go-scripts v0.0.1 h1:90OTz7ylJLbf4AeC59hwWQA3DAB907WV6GYrSWyKc+E=
-github.com/liujitcn/go-scripts v0.0.1/go.mod h1:Pugr/TDrJ3zAKePT8OdjpCBVV55gn4qJfcqrbpnAk9A=
+github.com/liujitcn/go-scripts v0.0.2 h1:IS7dFcuyc6EA9FTye+v36VT9Wf3ipHcML8QkLbST3fQ=
+github.com/liujitcn/go-scripts v0.0.2/go.mod h1:HrVmtdVqK4VhZDXUfSm7qcTvIDhhfA1s2fB1hhV3rhw=
 github.com/liujitcn/go-utils/crypto v0.0.18 h1:GhinMwCmzQvwcOsxdLVJMBH2OfJaeDBj1+25jg7M53k=
 github.com/liujitcn/go-utils/crypto v0.0.18/go.mod h1:wrOZB33r/Z/w12ckGfEaO5ZHqKoixnQdOmRH63sNlf0=
 github.com/liujitcn/kratos-kit/api v0.0.44 h1:dNvFACdMVfQu33T6BgTNYKu8o7Uzp19HW1q05vymGqQ=

@@ -3,7 +3,7 @@ module github.com/liujitcn/go-scripts/lua
 go 1.27.2
 
 require (
-	github.com/liujitcn/go-scripts v0.0.1
+	github.com/liujitcn/go-scripts v0.0.2
 	github.com/liujitcn/go-scripts/hostmodule v0.0.1
 	github.com/stretchr/testify v1.12.1
 	github.com/tengattack/gluacrypto v0.0.0-20240324200146-54b58c95c255
