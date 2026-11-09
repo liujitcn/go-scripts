@@ -148,3 +148,9 @@ GOWORK=off go test -mod=readonly ./...
 ```
 
 项目采用 MIT License，详见 [LICENSE](LICENSE)。
+
+## 不可信脚本的执行边界
+
+Lua 默认只开放计算、JSON 和安全时间函数，网络、文件、命令和加密扩展由宿主使用 `SetOpenLibs` 显式选择；Tcl 默认创建原生安全解释器，`SetOpenLibs` 只恢复宿主声明的隐藏命令。这些语言级限制不能代替操作系统隔离。
+
+`sandbox.Run` 在 Linux 使用 bubblewrap 命名空间，在 macOS 使用系统沙箱重新执行宿主 `--kratos-script-worker`；宿主入口通过 `IsWorker` 识别并调用 `LimitWorker`，使用标准输入读取数据，使用 `WriteResult` 的专用文件描述符返回结果。调用必须提供 deadline 和私有目录；仅开放 `Options` 中的路径、程序及明确授权的 Unix 套接字，不继承服务凭据，超时清理执行组，沙箱不可用时拒绝执行。Linux 需要安装 bubblewrap 并允许对应用户命名空间，容器应使用非 root 身份。

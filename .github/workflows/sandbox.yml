@@ -1,0 +1,32 @@
+name: Script sandbox
+
+on:
+  push:
+    paths:
+      - sandbox/**
+      - .github/workflows/sandbox.yml
+  pull_request:
+    paths:
+      - sandbox/**
+      - .github/workflows/sandbox.yml
+
+permissions:
+  contents: read
+
+jobs:
+  linux:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Install bubblewrap
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bubblewrap
+          # 临时托管 runner 允许该任务使用用户命名空间，生产环境应配置 bwrap 专用策略。
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+      - name: Exercise operating system sandbox
+        run: GOWORK=off go test -count=1 -v ./sandbox
