@@ -7,7 +7,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"os"
 	"slices"
 	"strings"
 	"time"
@@ -26,23 +25,6 @@ type HTTPOptions struct {
 	Timeout         time.Duration
 	MaxResponseBody int64
 	DenyLoopback    bool
-}
-
-const EnvHTTPAllowedDomains = "SCRIPT_HTTP_ALLOWED_DOMAINS"
-
-// HTTPAllowlistFromEnv 从环境变量读取 HTTP 域名白名单。
-func HTTPAllowlistFromEnv() HTTPOptions {
-	raw := strings.TrimSpace(os.Getenv(EnvHTTPAllowedDomains))
-	opts := HTTPOptions{}
-	if raw == "" {
-		return opts
-	}
-	for d := range strings.SplitSeq(raw, ",") {
-		if d = strings.TrimSpace(d); d != "" {
-			opts.AllowedDomains = append(opts.AllowedDomains, d)
-		}
-	}
-	return opts
 }
 
 func NormalizeHTTPOptions(o HTTPOptions) HTTPOptions {

@@ -95,7 +95,7 @@ func configureProcess(command *exec.Cmd) {
 
 // LimitWorker 限制工作进程的文件和平台资源，主服务进程不受影响。
 func LimitWorker() error {
-	if !IsWorker() || os.Getenv("KRATOS_SCRIPT_SANDBOX") != "1" {
+	if !IsWorker() {
 		return fmt.Errorf("工作进程缺少沙箱启动标识")
 	}
 	err := syscall.Setrlimit(syscall.RLIMIT_NOFILE, &syscall.Rlimit{Cur: 128, Max: 128})

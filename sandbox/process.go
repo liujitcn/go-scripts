@@ -81,7 +81,7 @@ func Run(ctx context.Context, input []byte, options Options) ([]byte, error) {
 	command.ExtraFiles = []*os.File{writer}
 	command.Stdin = bytes.NewReader(input)
 	command.Dir = options.Directory
-	command.Env = []string{"PATH=/usr/bin:/bin", "LANG=C.UTF-8", "TZ=UTC", "GOMAXPROCS=1", "GOMEMLIMIT=256MiB", "KRATOS_SCRIPT_SANDBOX=1"}
+	command.Env = []string{"PATH=/usr/bin:/bin", "LANG=C.UTF-8", "TZ=UTC", "GOMAXPROCS=1", "GOMEMLIMIT=256MiB"}
 	command.WaitDelay = time.Second
 	output := &limitedOutput{remaining: options.MaxOutputBytes}
 	command.Stdout = output

@@ -31,7 +31,7 @@ L := lua.NewState()
 defer L.Close()
 
 host.RegisterLogger(L, hostmodule.NewKitLogger())            // 使用 kratos-kit/logger 适配器
-host.RegisterHTTP(L, hostmodule.HTTPAllowlistFromEnv())     // 环境变量 SCRIPT_HTTP_ALLOWED_DOMAINS
+host.RegisterHTTP(L, hostmodule.HTTPOptions{AllowedDomains: []string{"hooks.slack.com"}})
 ```
 
 ```lua

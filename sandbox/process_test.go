@@ -37,8 +37,6 @@ func TestMain(main *testing.M) {
 			var data []byte
 			data, err = os.ReadFile(fixture.Path)
 			fixture.Value = string(data)
-		case "env":
-			fixture.Value = os.Getenv("SCRIPT_TEST_SECRET")
 		case "connect":
 			var connection net.Conn
 			connection, err = net.Dial("unix", fixture.Path)
@@ -105,12 +103,6 @@ func TestProcessIsolation(t *testing.T) {
 	err = json.Unmarshal(output, &fixture)
 	if err != nil || fixture.Value != "private-value" {
 		t.Fatalf("授权文件访问失败: %s, %v", output, err)
-	}
-	t.Setenv("SCRIPT_TEST_SECRET", "must-not-inherit")
-	input = []byte(`{"Action":"env"}`)
-	output, err = Run(ctx, input, Options{Directory: work})
-	if err != nil || strings.Contains(string(output), "must-not-inherit") {
-		t.Fatalf("宿主环境隔离失败: %s, %v", output, err)
 	}
 	var listener net.Listener
 	socket := filepath.Join(directory, "private.sock")

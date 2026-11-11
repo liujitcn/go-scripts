@@ -3,7 +3,6 @@ package tcl
 import (
 	"context"
 	"fmt"
-	"os"
 	"reflect"
 	"strings"
 	"sync"
@@ -81,17 +80,6 @@ func (e *engine) Init(_ context.Context) error {
 		return ErrTCLEngineAlreadyInitialized
 	}
 	var err error
-	if os.Getenv("TCL_LIBRARY") == "" {
-		var mountPoint string
-		mountPoint, err = tcl.MountLibraryVFS()
-		if err != nil {
-			return fmt.Errorf("初始化 TCL 内置库失败: %w", err)
-		}
-		err = os.Setenv("TCL_LIBRARY", mountPoint)
-		if err != nil {
-			return err
-		}
-	}
 	var interp *tcl.Interp
 	interp, err = tcl.NewInterp()
 	if err != nil {
